@@ -316,8 +316,12 @@ def check_in(
     except HTTPException:
         raise
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -449,8 +453,12 @@ def check_out(
     except HTTPException:
         raise
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -499,8 +507,12 @@ def get_attendance_status(user_id_param: str, current_user: dict = Depends(requi
                 last_log_time=log_row.LogDateTime
             )
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -557,8 +569,12 @@ def get_attendance_history(
                 )
             return result
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -626,8 +642,12 @@ def login(payload: LoginRequest):
                 )
             )
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -735,8 +755,12 @@ def create_user(payload: UserCreate):
     except pyodbc.IntegrityError:
         raise HTTPException(status_code=400, detail="Bu Çalışan Kodu veya RFID Kart UID zaten sistemde kayıtlı.")
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -775,8 +799,12 @@ def list_users():
                 )
             return result
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -820,8 +848,12 @@ def list_locations():
                 )
             return result
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -889,8 +921,12 @@ def get_attendance_reports(
                 )
             return result
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -1033,8 +1069,12 @@ def get_employee_attendance_report(
             )
 
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
@@ -1109,7 +1149,7 @@ def _fetch_work_hours_report_data(
                a.ActionType, a.LocationDescription, a.Latitude, a.Longitude,
                a.DeviceInfo, a.IPAddress, a.ResolvedAddress, a.LogDateTime
         FROM FieldAttendanceLogs a
-        LEFT JOIN Users u ON (a.UserID = u.UserID OR TRY_CAST(u.EmployeeCode AS INT) = a.UserID)
+        LEFT JOIN Users u ON a.UserID = u.UserID
         {date_where_sql}
         ORDER BY a.LogDateTime ASC, a.LogID ASC;
     """
@@ -1133,7 +1173,7 @@ def _fetch_work_hours_report_data(
             UserID=row.UserID,
             EmployeeCode=row.EmployeeCode or f"EMP-{row.UserID}",
             EmployeeName=row.FullName or f"Çalışan #{row.UserID}",
-            ActionType=row.ActionType,
+            ActionType=row.ActionType or "CHECK_IN",
             LocationDescription=row.LocationDescription or "-",
             Latitude=row.Latitude,
             Longitude=row.Longitude,
@@ -1163,13 +1203,18 @@ def _fetch_work_hours_report_data(
 
         check_ins = sum(1 for l in u_logs if l.ActionType == "CHECK_IN")
         check_outs = sum(1 for l in u_logs if l.ActionType == "CHECK_OUT")
-        days_worked = len(set(l.LogDateTime.date() for l in u_logs))
-        first_punch = u_logs[0].LogDateTime if u_logs else None
-        last_punch = u_logs[-1].LogDateTime if u_logs else None
+        days_worked = len(set(l.LogDateTime.date() for l in u_logs if l.LogDateTime is not None))
+        
+        first_log = u_logs[0] if u_logs else None
+        last_log = u_logs[-1] if u_logs else None
+        first_punch = first_log.LogDateTime if first_log else None
+        last_punch = last_log.LogDateTime if last_log else None
 
         total_seconds = 0.0
         last_checkin_time = None
         for l in u_logs:
+            if not l.LogDateTime:
+                continue
             if l.ActionType == "CHECK_IN":
                 last_checkin_time = l.LogDateTime
             elif l.ActionType == "CHECK_OUT" and last_checkin_time is not None:
@@ -1186,7 +1231,7 @@ def _fetch_work_hours_report_data(
         formatted_duration = f"{hours_int} sa {mins_int} dk" if total_seconds > 0 else "0 sa 0 dk"
 
         is_currently_active = bool(
-            last_punch and last_punch.ActionType == "CHECK_IN" and (now_dt - last_punch.LogDateTime).total_seconds() < 18 * 3600
+            last_log and last_log.ActionType == "CHECK_IN" and last_log.LogDateTime and (now_dt - last_log.LogDateTime).total_seconds() < 18 * 3600
         )
         if is_currently_active:
             active_now_count += 1
@@ -1194,9 +1239,9 @@ def _fetch_work_hours_report_data(
         items.append(
             PersonnelWorkHoursItem(
                 UserID=u.UserID,
-                EmployeeCode=u.EmployeeCode,
-                FullName=u.FullName,
-                Role=u.Role,
+                EmployeeCode=str(u.EmployeeCode or f"EMP-{u.UserID}"),
+                FullName=str(u.FullName or f"Çalışan #{u.UserID}"),
+                Role=str(u.Role or "EMPLOYEE"),
                 TotalCheckIns=check_ins,
                 TotalCheckOuts=check_outs,
                 DaysWorked=days_worked,
@@ -1449,8 +1494,12 @@ def get_personnel_work_hours(
         )
         return report
     except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 

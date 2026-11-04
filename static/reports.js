@@ -114,7 +114,12 @@ async function loadReportData() {
         }
 
         if (!response.ok) {
-            throw new Error(`Sunucu hatası: ${response.status}`);
+            let errorMsg = `Sunucu hatası (${response.status})`;
+            try {
+                const errData = await response.json();
+                if (errData && errData.detail) errorMsg = errData.detail;
+            } catch (_) {}
+            throw new Error(errorMsg);
         }
 
         const data = await response.json();
@@ -385,3 +390,4 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
+

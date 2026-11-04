@@ -169,8 +169,8 @@ class AttendanceReportLog(BaseModel):
     UserID: int
     EmployeeCode: Optional[str] = None
     EmployeeName: Optional[str] = None
-    ActionType: str
-    LocationDescription: str
+    ActionType: Optional[str] = "CHECK_IN"
+    LocationDescription: Optional[str] = ""
     Latitude: Optional[float] = None
     Longitude: Optional[float] = None
     DeviceInfo: Optional[str] = None
@@ -274,9 +274,9 @@ class TerminalKeyResponse(BaseModel):
 
 class PersonnelWorkHoursItem(BaseModel):
     UserID: int
-    EmployeeCode: str
-    FullName: str
-    Role: str
+    EmployeeCode: Optional[str] = ""
+    FullName: Optional[str] = ""
+    Role: Optional[str] = "EMPLOYEE"
     TotalCheckIns: int = 0
     TotalCheckOuts: int = 0
     DaysWorked: int = 0
