@@ -266,3 +266,41 @@ class TerminalKeyResponse(BaseModel):
     """Anahtar yalnızca oluşturma/yenileme yanıtında bir kez döner; sonra tekrar gösterilemez."""
     terminal: TerminalResponse
     TerminalKey: str
+
+
+# ==========================================
+# PERSONEL TOPLU ÇALIŞMA SÜRESİ VE EXCEL RAPOR ŞEMALARI
+# ==========================================
+
+class PersonnelWorkHoursItem(BaseModel):
+    UserID: int
+    EmployeeCode: str
+    FullName: str
+    Role: str
+    TotalCheckIns: int = 0
+    TotalCheckOuts: int = 0
+    DaysWorked: int = 0
+    TotalWorkSeconds: float = 0.0
+    TotalWorkHours: float = 0.0
+    FormattedWorkDuration: str = "0 sa 0 dk"
+    FirstPunch: Optional[datetime] = None
+    LastPunch: Optional[datetime] = None
+    IsCurrentlyActive: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class PersonnelWorkHoursReportResponse(BaseModel):
+    filter_range: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    total_personnel_count: int = 0
+    total_active_personnel: int = 0
+    total_hours_sum: float = 0.0
+    average_hours: float = 0.0
+    items: List[PersonnelWorkHoursItem] = []
+
+    class Config:
+        from_attributes = True
+

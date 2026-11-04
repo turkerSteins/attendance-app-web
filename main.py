@@ -1,15 +1,20 @@
 import os
+import io
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, Query, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from typing import List, Optional, Union
 import pyodbc
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 from database import get_db_connection
 from auth import (
     hash_password, verify_password, is_password_hashed, create_access_token, require_admin, require_user,
-    require_terminal, generate_terminal_key, hash_terminal_key, set_user_password
+    require_terminal, generate_terminal_key, hash_terminal_key, set_user_password, decode_access_token
 )
 # [SERTIFIKA_MTLS_DEVRE_DISI]
 # from device_trust import get_device_trust_info, DeviceTrustInfo
@@ -36,7 +41,9 @@ from schemas import (
     PasswordSetRequest,
     PasswordChangeRequest,
     PasswordChangeResponse,
-    MessageResponse
+    MessageResponse,
+    PersonnelWorkHoursItem,
+    PersonnelWorkHoursReportResponse
 )
 
 app = FastAPI(
@@ -155,6 +162,14 @@ def read_index():
     Saha çalışanları için web arayüzünü (index.html) sunar.
     """
     return FileResponse("static/index.html")
+
+
+@app.get("/reports", include_in_schema=False)
+def read_reports_page():
+    """
+    Tüm personellerin çalışma saatlerini ve Excel raporlama arayüzünü (reports.html) sunar.
+    """
+    return FileResponse("static/reports.html")
 
 
 @app.get("/api/v1/health", tags=["Health Check"])
@@ -1021,6 +1036,471 @@ def get_employee_attendance_report(
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
+
+
+# ==========================================
+# PERSONEL TOPLU ÇALIŞMA SAATLERİ VE EXCEL RAPORLAMA API
+# ==========================================
+
+def require_admin_or_query_token(
+    request: Request,
+    token: Optional[str] = Query(None, description="Opsiyonel indirme token'ı")
+) -> dict:
+    """Excel indirmelerinde hem Authorization Header hem de URL ?token=... desteği sağlar."""
+    auth_header = request.headers.get("Authorization")
+    raw_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        raw_token = auth_header.split(" ", 1)[1].strip()
+    elif token:
+        raw_token = token.strip()
+    
+    if not raw_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Oturum token'ı bulunamadı.")
+    
+    payload = decode_access_token(raw_token)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Geçersiz veya süresi dolmuş oturum token'ı.")
+    if payload.get("role") != "ADMIN":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işlem için Admin yetkisi gereklidir.")
+    return payload
+
+
+def _fetch_work_hours_report_data(
+    range_type: str = "weekly",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    search: Optional[str] = None
+) -> tuple[PersonnelWorkHoursReportResponse, list]:
+    range_clean = (range_type or "weekly").lower().strip()
+
+    date_clauses = []
+    date_params = []
+
+    if range_clean == "daily":
+        date_clauses.append("CAST(a.LogDateTime AS DATE) = CAST(GETDATE() AS DATE)")
+    elif range_clean == "weekly":
+        date_clauses.append("a.LogDateTime >= DATEADD(day, -7, GETDATE())")
+    elif range_clean == "monthly":
+        date_clauses.append("a.LogDateTime >= DATEADD(month, -1, GETDATE())")
+    elif range_clean == "custom":
+        if start_date and start_date.strip():
+            s = start_date.strip()
+            if len(s) == 10:
+                s += " 00:00:00"
+            date_clauses.append("a.LogDateTime >= ?")
+            date_params.append(s)
+        if end_date and end_date.strip():
+            e = end_date.strip()
+            if len(e) == 10:
+                e += " 23:59:59"
+            date_clauses.append("a.LogDateTime <= ?")
+            date_params.append(e)
+
+    date_where_sql = ("WHERE " + " AND ".join(date_clauses)) if date_clauses else ""
+
+    users_sql = """
+        SELECT UserID, EmployeeCode, FullName, Role, CardUID
+        FROM Users
+        ORDER BY FullName ASC;
+    """
+
+    logs_sql = f"""
+        SELECT a.LogID, a.UserID, u.UserID AS MatchedUserID, u.EmployeeCode, u.FullName,
+               a.ActionType, a.LocationDescription, a.Latitude, a.Longitude,
+               a.DeviceInfo, a.IPAddress, a.ResolvedAddress, a.LogDateTime
+        FROM FieldAttendanceLogs a
+        LEFT JOIN Users u ON (a.UserID = u.UserID OR TRY_CAST(u.EmployeeCode AS INT) = a.UserID)
+        {date_where_sql}
+        ORDER BY a.LogDateTime ASC, a.LogID ASC;
+    """
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(users_sql)
+        user_rows = cursor.fetchall()
+
+        cursor.execute(logs_sql, date_params)
+        log_rows = cursor.fetchall()
+
+    import collections
+    logs_by_user = collections.defaultdict(list)
+    all_logs_list = []
+
+    for row in log_rows:
+        resolved_uid = row.MatchedUserID if row.MatchedUserID is not None else row.UserID
+        log_obj = AttendanceReportLog(
+            LogID=row.LogID,
+            UserID=row.UserID,
+            EmployeeCode=row.EmployeeCode or f"EMP-{row.UserID}",
+            EmployeeName=row.FullName or f"Çalışan #{row.UserID}",
+            ActionType=row.ActionType,
+            LocationDescription=row.LocationDescription or "-",
+            Latitude=row.Latitude,
+            Longitude=row.Longitude,
+            DeviceInfo=row.DeviceInfo,
+            IPAddress=row.IPAddress,
+            ResolvedAddress=row.ResolvedAddress,
+            LogDateTime=row.LogDateTime
+        )
+        logs_by_user[resolved_uid].append(log_obj)
+        all_logs_list.append(log_obj)
+
+    search_term = (search or "").strip().lower()
+
+    items: List[PersonnelWorkHoursItem] = []
+    total_hours_sum = 0.0
+    active_now_count = 0
+    now_dt = datetime.now()
+
+    for u in user_rows:
+        if search_term:
+            emp_c = (u.EmployeeCode or "").lower()
+            emp_n = (u.FullName or "").lower()
+            if search_term not in emp_c and search_term not in emp_n:
+                continue
+
+        u_logs = logs_by_user.get(u.UserID, [])
+
+        check_ins = sum(1 for l in u_logs if l.ActionType == "CHECK_IN")
+        check_outs = sum(1 for l in u_logs if l.ActionType == "CHECK_OUT")
+        days_worked = len(set(l.LogDateTime.date() for l in u_logs))
+        first_punch = u_logs[0].LogDateTime if u_logs else None
+        last_punch = u_logs[-1].LogDateTime if u_logs else None
+
+        total_seconds = 0.0
+        last_checkin_time = None
+        for l in u_logs:
+            if l.ActionType == "CHECK_IN":
+                last_checkin_time = l.LogDateTime
+            elif l.ActionType == "CHECK_OUT" and last_checkin_time is not None:
+                diff = (l.LogDateTime - last_checkin_time).total_seconds()
+                if 0 < diff <= 24 * 3600:
+                    total_seconds += diff
+                last_checkin_time = None
+
+        total_work_hours = round(total_seconds / 3600.0, 2)
+        total_hours_sum += total_work_hours
+
+        hours_int = int(total_seconds // 3600)
+        mins_int = int((total_seconds % 3600) // 60)
+        formatted_duration = f"{hours_int} sa {mins_int} dk" if total_seconds > 0 else "0 sa 0 dk"
+
+        is_currently_active = bool(
+            last_punch and last_punch.ActionType == "CHECK_IN" and (now_dt - last_punch.LogDateTime).total_seconds() < 18 * 3600
+        )
+        if is_currently_active:
+            active_now_count += 1
+
+        items.append(
+            PersonnelWorkHoursItem(
+                UserID=u.UserID,
+                EmployeeCode=u.EmployeeCode,
+                FullName=u.FullName,
+                Role=u.Role,
+                TotalCheckIns=check_ins,
+                TotalCheckOuts=check_outs,
+                DaysWorked=days_worked,
+                TotalWorkSeconds=total_seconds,
+                TotalWorkHours=total_work_hours,
+                FormattedWorkDuration=formatted_duration,
+                FirstPunch=first_punch,
+                LastPunch=last_punch,
+                IsCurrentlyActive=is_currently_active
+            )
+        )
+
+    # Çok çalışandan aza doğru sıralama
+    items.sort(key=lambda x: (-x.TotalWorkHours, x.FullName.lower()))
+
+    total_personnel_count = len(items)
+    avg_hours = round(total_hours_sum / total_personnel_count, 2) if total_personnel_count > 0 else 0.0
+
+    report_response = PersonnelWorkHoursReportResponse(
+        filter_range=range_clean,
+        start_date=start_date,
+        end_date=end_date,
+        total_personnel_count=total_personnel_count,
+        total_active_personnel=active_now_count,
+        total_hours_sum=round(total_hours_sum, 2),
+        average_hours=avg_hours,
+        items=items
+    )
+
+    return report_response, all_logs_list
+
+
+def create_work_hours_excel_file(report_data: PersonnelWorkHoursReportResponse, all_logs: list, period_label: str) -> io.BytesIO:
+    """Openpyxl kullanarak profesyonel, çift sayfalı Excel çalışma kitabı üretir."""
+    wb = openpyxl.Workbook()
+
+    COLOR_HEADER_BG = "2E5B3E"      # Derin zümrüt yeşili
+    COLOR_HEADER_TEXT = "FFFFFF"
+    COLOR_ZEBRA = "F4F7F4"
+    COLOR_BORDER = "D1D5DB"
+    COLOR_TOTAL_BG = "E5E7EB"
+
+    thin_side = Side(border_style="thin", color=COLOR_BORDER)
+    cell_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    double_bottom_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=Side(border_style="double", color="111827"))
+
+    # 1. SAYFA: PERSONEL ÇALIŞMA SÜRELERİ ÖZETİ
+    ws1 = wb.active
+    ws1.title = "Personel Çalışma Saatleri"
+    ws1.views.sheetView[0].showGridLines = True
+
+    # Başlık Bloğu
+    ws1.merge_cells("A1:L1")
+    title_cell = ws1["A1"]
+    title_cell.value = "SAHA MESAİ TAKİP - PERSONEL ÇALIŞMA SÜRELERİ RAPORU"
+    title_cell.font = Font(name="Calibri", size=14, bold=True, color=COLOR_HEADER_TEXT)
+    title_cell.fill = PatternFill(start_color=COLOR_HEADER_BG, end_color=COLOR_HEADER_BG, fill_type="solid")
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws1.row_dimensions[1].height = 36
+
+    # Bilgi Satırı
+    ws1["A2"] = "Filtre Periyodu:"
+    ws1["B2"] = period_label
+    ws1["A2"].font = Font(name="Calibri", size=10, bold=True)
+    ws1["D2"] = "Rapor Alma Tarihi:"
+    ws1["E2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+    ws1["D2"].font = Font(name="Calibri", size=10, bold=True)
+    ws1.row_dimensions[2].height = 20
+
+    # Özet İstatistik Satırı
+    ws1.merge_cells("A3:L3")
+    kpi_cell = ws1["A3"]
+    kpi_cell.value = f"Toplam Personel: {report_data.total_personnel_count}  |  Anlık Mesaide: {report_data.total_active_personnel}  |  Toplam Mesai: {report_data.total_hours_sum} Saat  |  Personel Başına Ortalama: {report_data.average_hours} Saat"
+    kpi_cell.font = Font(name="Calibri", size=10, italic=True, color="374151")
+    kpi_cell.fill = PatternFill(start_color="F0F4F1", end_color="F0F4F1", fill_type="solid")
+    kpi_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws1.row_dimensions[3].height = 22
+
+    # Tablo Başlıkları (Satır 5)
+    headers = [
+        "Sıra", "Sicil Kodu", "Personel Adı Soyadı", "Rol / Yetki", "Çalışılan Gün",
+        "Giriş Sayısı", "Çıkış Sayısı", "Toplam Süre (Saat)", "Toplam Süre (Metin)",
+        "Anlık Durum", "İlk Hareket", "Son Hareket"
+    ]
+    ws1.row_dimensions[5].height = 26
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws1.cell(row=5, column=col_idx, value=header)
+        cell.font = Font(name="Calibri", size=11, bold=True, color=COLOR_HEADER_TEXT)
+        cell.fill = PatternFill(start_color=COLOR_HEADER_BG, end_color=COLOR_HEADER_BG, fill_type="solid")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = cell_border
+
+    # Satırlar
+    start_row = 6
+    for idx, item in enumerate(report_data.items, 1):
+        current_row = start_row + idx - 1
+        ws1.row_dimensions[current_row].height = 20
+        is_zebra = (idx % 2 == 0)
+        row_fill = PatternFill(start_color=COLOR_ZEBRA, end_color=COLOR_ZEBRA, fill_type="solid") if is_zebra else None
+
+        status_str = "Mesaide (Giriş)" if item.IsCurrentlyActive else "Dışarıda"
+        first_punch_str = item.FirstPunch.strftime("%d.%m.%Y %H:%M") if item.FirstPunch else "-"
+        last_punch_str = item.LastPunch.strftime("%d.%m.%Y %H:%M") if item.LastPunch else "-"
+
+        row_values = [
+            idx,
+            item.EmployeeCode,
+            item.FullName,
+            item.Role,
+            item.DaysWorked,
+            item.TotalCheckIns,
+            item.TotalCheckOuts,
+            item.TotalWorkHours,
+            item.FormattedWorkDuration,
+            status_str,
+            first_punch_str,
+            last_punch_str
+        ]
+
+        for col_idx, val in enumerate(row_values, 1):
+            cell = ws1.cell(row=current_row, column=col_idx, value=val)
+            if row_fill:
+                cell.fill = row_fill
+            cell.border = cell_border
+            cell.font = Font(name="Calibri", size=10)
+
+            if col_idx in (1, 5, 6, 7):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif col_idx == 8:
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+                cell.number_format = "#,##0.00"
+            elif col_idx in (10, 11, 12):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    # Genel Toplam Satırı
+    last_data_row = start_row + len(report_data.items) - 1
+    total_row = max(start_row, last_data_row + 1)
+    ws1.row_dimensions[total_row].height = 24
+
+    ws1.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=4)
+    total_label = ws1.cell(row=total_row, column=1, value="GENEL TOPLAM")
+    total_label.font = Font(name="Calibri", size=11, bold=True)
+    total_label.alignment = Alignment(horizontal="center", vertical="center")
+
+    for c in range(1, 13):
+        cell = ws1.cell(row=total_row, column=c)
+        cell.fill = PatternFill(start_color=COLOR_TOTAL_BG, end_color=COLOR_TOTAL_BG, fill_type="solid")
+        cell.border = double_bottom_border
+
+    if len(report_data.items) > 0:
+        ws1.cell(row=total_row, column=5, value=f"=SUM(E{start_row}:E{last_data_row})").font = Font(bold=True)
+        ws1.cell(row=total_row, column=6, value=f"=SUM(F{start_row}:F{last_data_row})").font = Font(bold=True)
+        ws1.cell(row=total_row, column=7, value=f"=SUM(G{start_row}:G{last_data_row})").font = Font(bold=True)
+        h_cell = ws1.cell(row=total_row, column=8, value=f"=SUM(H{start_row}:H{last_data_row})")
+        h_cell.font = Font(bold=True)
+        h_cell.number_format = "#,##0.00"
+        for col_c in (5, 6, 7):
+            ws1.cell(row=total_row, column=col_c).alignment = Alignment(horizontal="center", vertical="center")
+        h_cell.alignment = Alignment(horizontal="right", vertical="center")
+
+    # Kolon genişliklerini otomatik ayarla
+    for col in ws1.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            if cell.row in (1, 3):
+                continue
+            val_str = str(cell.value or "")
+            if val_str.startswith("="):
+                val_str = "9999.00"
+            max_len = max(max_len, len(val_str))
+        ws1.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    # 2. SAYFA: DETAYLI MESAI HAREKET LOGLARI
+    ws2 = wb.create_sheet(title="Mesai Hareketleri")
+    ws2.views.sheetView[0].showGridLines = True
+
+    log_headers = ["Log ID", "Sicil Kodu", "Personel Adı Soyadı", "İşlem Türü", "Tarih & Saat", "Konum / Şantiye", "Açık Adres", "Cihaz Bilgisi", "IP Adresi"]
+    ws2.row_dimensions[1].height = 25
+    for col_idx, h in enumerate(log_headers, 1):
+        c = ws2.cell(row=1, column=col_idx, value=h)
+        c.font = Font(name="Calibri", size=11, bold=True, color=COLOR_HEADER_TEXT)
+        c.fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = cell_border
+
+    for idx, log in enumerate(all_logs, 2):
+        ws2.row_dimensions[idx].height = 18
+        is_zebra = (idx % 2 == 0)
+        row_fill = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid") if is_zebra else None
+
+        action_tr = "GİRİŞ" if log.ActionType == "CHECK_IN" else "ÇIKIŞ"
+        date_str = log.LogDateTime.strftime("%d.%m.%Y %H:%M:%S") if log.LogDateTime else "-"
+
+        vals = [
+            log.LogID,
+            log.EmployeeCode or f"EMP-{log.UserID}",
+            log.EmployeeName or f"Çalışan #{log.UserID}",
+            action_tr,
+            date_str,
+            log.LocationDescription or "-",
+            log.ResolvedAddress or "-",
+            log.DeviceInfo or "-",
+            log.IPAddress or "-"
+        ]
+        for c_idx, v in enumerate(vals, 1):
+            cell = ws2.cell(row=idx, column=c_idx, value=v)
+            if row_fill:
+                cell.fill = row_fill
+            cell.border = cell_border
+            cell.font = Font(name="Calibri", size=10)
+            if c_idx in (1, 4, 5, 9):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for col in ws2.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        col_letter = get_column_letter(col[0].column)
+        ws2.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 40)
+
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out
+
+
+@app.get(
+    "/api/v1/admin/reports/work-hours",
+    response_model=PersonnelWorkHoursReportResponse,
+    tags=["Admin Operations"],
+    dependencies=[Depends(require_admin)]
+)
+def get_personnel_work_hours(
+    range: str = Query("weekly", description="Filtre türü: 'daily', 'weekly', 'monthly', 'custom', 'all'"),
+    start_date: Optional[str] = Query(None, description="Başlangıç tarihi (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Bitiş tarihi (YYYY-MM-DD)"),
+    search: Optional[str] = Query(None, description="İsim veya Sicil Kodu ile arama")
+):
+    """
+    Tüm personellerin seçilen tarih filtresine göre toplam ve tahmini çalışma saatlerini,
+    giriş-çıkış istatistiklerini getirir.
+    """
+    try:
+        report, _ = _fetch_work_hours_report_data(
+            range_type=range,
+            start_date=start_date,
+            end_date=end_date,
+            search=search
+        )
+        return report
+    except pyodbc.Error as db_err:
+        raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
+
+
+@app.get(
+    "/api/v1/admin/reports/work-hours/export-excel",
+    tags=["Admin Operations"]
+)
+def export_personnel_work_hours_excel(
+    request: Request,
+    range: str = Query("weekly", description="Filtre türü: 'daily', 'weekly', 'monthly', 'custom', 'all'"),
+    start_date: Optional[str] = Query(None, description="Başlangıç tarihi (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Bitiş tarihi (YYYY-MM-DD)"),
+    search: Optional[str] = Query(None, description="İsim veya Sicil Kodu ile arama"),
+    token: Optional[str] = Query(None, description="Yetki token'ı"),
+    admin: dict = Depends(require_admin_or_query_token)
+):
+    """
+    Filtrelenen personel çalışma saatlerini ve mesai loglarını çift sayfalı şık bir Excel (.xlsx) dosyası olarak indirir.
+    """
+    try:
+        report, all_logs = _fetch_work_hours_report_data(
+            range_type=range,
+            start_date=start_date,
+            end_date=end_date,
+            search=search
+        )
+
+        period_labels = {
+            "daily": "Bugün",
+            "weekly": "Son 7 Gün (Haftalık)",
+            "monthly": "Son 30 Gün (Aylık)",
+            "all": "Tüm Zamanlar",
+            "custom": f"{start_date or '...'} - {end_date or '...'}"
+        }
+        period_text = period_labels.get(range.lower(), range)
+
+        excel_stream = create_work_hours_excel_file(report, all_logs, period_text)
+        file_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"Personel_Mesai_Raporu_{range}_{file_stamp}.xlsx"
+
+        return StreamingResponse(
+            excel_stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except pyodbc.Error as db_err:
+        raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Excel oluşturulurken hata: {str(e)}")
+
 
 
 # ==========================================

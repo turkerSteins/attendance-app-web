@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personel Çalışma Süreleri ve Excel Raporu - Web Attendance</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Base CSS -->
+    <link rel="stylesheet" href="/static/style.css?v=20261104_1">
+    <style>
+        /* Dedicated Report Page Styles */
+        .report-page-container {
+            width: 100%;
+            max-width: 1320px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .report-top-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            background: var(--bg-card);
+            padding: 20px 28px;
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-card);
+        }
+
+        .report-brand-title {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .report-brand-title i.brand-icon {
+            font-size: 1.8rem;
+            color: #2E7D32;
+            background: #E8F5E9;
+            padding: 12px;
+            border-radius: 12px;
+        }
+
+        .report-brand-title h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 2px;
+        }
+
+        .report-brand-title p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .report-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* KPI Stats Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 18px;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 20px 24px;
+            box-shadow: var(--shadow-card);
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px -6px rgba(44, 51, 45, 0.1);
+        }
+
+        .kpi-icon-wrapper {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            flex-shrink: 0;
+        }
+
+        .kpi-icon-blue { background: #E0F2FE; color: #0284C7; }
+        .kpi-icon-green { background: #DCFCE7; color: #16A34A; }
+        .kpi-icon-amber { background: #FEF3C7; color: #D97706; }
+        .kpi-icon-purple { background: #F3E8FF; color: #9333EA; }
+
+        .kpi-info h3 {
+            font-size: 0.82rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .kpi-info .kpi-value {
+            font-size: 1.65rem;
+            font-weight: 800;
+            color: var(--text-main);
+            line-height: 1.2;
+        }
+
+        /* Toolbar & Filters Card */
+        .toolbar-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xl);
+            padding: 22px 28px;
+            box-shadow: var(--shadow-card);
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .toolbar-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .range-pill-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            background: #F1F4F1;
+            padding: 6px;
+            border-radius: var(--radius-md);
+        }
+
+        .range-pill-btn {
+            border: none;
+            background: transparent;
+            padding: 8px 16px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .range-pill-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .range-pill-btn.active {
+            background: var(--bg-card);
+            color: #1B4332;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        }
+
+        .excel-export-btn {
+            background: #2E7D32;
+            color: #FFFFFF;
+            border: none;
+            padding: 10px 22px;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 0.92rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(46, 125, 50, 0.25);
+        }
+
+        .excel-export-btn:hover {
+            background: #1B5E20;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(46, 125, 50, 0.35);
+        }
+
+        .excel-export-btn:active {
+            transform: translateY(0);
+        }
+
+        .excel-export-btn.loading {
+            opacity: 0.8;
+            pointer-events: none;
+        }
+
+        .toolbar-bottom-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 14px;
+            padding-top: 14px;
+            border-top: 1px dashed var(--border);
+        }
+
+        .custom-date-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .custom-date-input {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 0.88rem;
+            color: var(--text-main);
+            background: #FAFAFA;
+        }
+
+        .custom-date-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: #FFFFFF;
+        }
+
+        .search-box-wrapper {
+            flex: 1;
+            min-width: 260px;
+            position: relative;
+        }
+
+        .search-box-wrapper input {
+            width: 100%;
+            padding: 9px 14px 9px 38px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            color: var(--text-main);
+            background: #FAFAFA;
+            transition: border-color 0.2s ease;
+        }
+
+        .search-box-wrapper input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: #FFFFFF;
+        }
+
+        .search-box-wrapper i {
+            position: absolute;
+            left: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        /* Table Card */
+        .table-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-card);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .table-header-bar {
+            padding: 18px 26px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            background: #FCFDFB;
+        }
+
+        .table-header-bar h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .table-responsive-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .report-data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
+        .report-data-table th {
+            background: #F4F7F4;
+            color: #2F3E33;
+            font-weight: 700;
+            padding: 14px 16px;
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+
+        .report-data-table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-main);
+            vertical-align: middle;
+        }
+
+        .report-data-table tbody tr:hover {
+            background-color: #F8FAF7;
+        }
+
+        .badge-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .badge-active {
+            background: #DCFCE7;
+            color: #15803D;
+        }
+
+        .badge-active::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #16A34A;
+            animation: pulseDot 1.5s infinite;
+        }
+
+        @keyframes pulseDot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(1.3); }
+        }
+
+        .badge-idle {
+            background: #F3F4F6;
+            color: #6B7280;
+        }
+
+        .hours-highlight {
+            font-weight: 800;
+            font-size: 1.05rem;
+            color: #1B4332;
+        }
+
+        .btn-view-logs {
+            background: #E8F5E9;
+            color: #2E7D32;
+            border: 1px solid #C8E6C9;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-view-logs:hover {
+            background: #2E7D32;
+            color: #FFFFFF;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 20px;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-dialog {
+            background: #FFFFFF;
+            border-radius: var(--radius-xl);
+            width: 100%;
+            max-width: 860px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--shadow-modal);
+            overflow: hidden;
+        }
+
+        .modal-header {
+            padding: 20px 26px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #F9FBF9;
+        }
+
+        .modal-header h3 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .modal-close-btn {
+            background: transparent;
+            border: none;
+            font-size: 1.3rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 6px;
+            transition: color 0.2s;
+        }
+
+        .modal-close-btn:hover {
+            color: var(--error);
+        }
+
+        .modal-body {
+            padding: 24px 26px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .log-timeline-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88rem;
+        }
+
+        .log-timeline-table th {
+            background: #F3F4F6;
+            color: var(--text-muted);
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+
+        .log-timeline-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #E5E7EB;
+        }
+
+        .action-tag-in {
+            color: #15803D;
+            background: #DCFCE7;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 0.78rem;
+        }
+
+        .action-tag-out {
+            color: #B91C1C;
+            background: #FEE2E2;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 0.78rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="report-page-container">
+
+        <!-- Top Header Navigation -->
+        <header class="report-top-header">
+            <div class="report-brand-title">
+                <i class="fa-solid fa-file-excel brand-icon"></i>
+                <div>
+                    <h1>Personel Çalışma Süreleri ve Excel Raporu</h1>
+                    <p>Filtrelenen dönem bazında tüm çalışanların mesai saatleri, giriş-çıkış analizleri ve Excel çıktısı</p>
+                </div>
+            </div>
+
+            <div class="report-header-actions">
+                <a href="/" class="btn btn-outline" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px;">
+                    <i class="fa-solid fa-arrow-left"></i>
+                    <span>Ana Panele Dön</span>
+                </a>
+                <button type="button" class="btn btn-ghost" onclick="handleLogout()" title="Oturumu Kapat">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- KPI Summary Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-icon-wrapper kpi-icon-blue">
+                    <i class="fa-solid fa-users"></i>
+                </div>
+                <div class="kpi-info">
+                    <h3>Toplam Personel</h3>
+                    <div id="kpiTotalPersonnel" class="kpi-value">-</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon-wrapper kpi-icon-green">
+                    <i class="fa-solid fa-user-check"></i>
+                </div>
+                <div class="kpi-info">
+                    <h3>Şu An Mesaide</h3>
+                    <div id="kpiActivePersonnel" class="kpi-value">-</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon-wrapper kpi-icon-amber">
+                    <i class="fa-solid fa-clock"></i>
+                </div>
+                <div class="kpi-info">
+                    <h3>Toplam Çalışma Süresi</h3>
+                    <div id="kpiTotalHours" class="kpi-value">-</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon-wrapper kpi-icon-purple">
+                    <i class="fa-solid fa-chart-pie"></i>
+                </div>
+                <div class="kpi-info">
+                    <h3>Kişi Başı Ortalama</h3>
+                    <div id="kpiAvgHours" class="kpi-value">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter & Actions Toolbar -->
+        <div class="toolbar-card">
+            <div class="toolbar-top-row">
+                <!-- Period Switcher Buttons -->
+                <div class="range-pill-group">
+                    <button type="button" class="range-pill-btn" data-range="daily" onclick="setPeriod('daily')">
+                        <i class="fa-solid fa-calendar-day"></i> Bugün
+                    </button>
+                    <button type="button" class="range-pill-btn active" data-range="weekly" onclick="setPeriod('weekly')">
+                        <i class="fa-solid fa-calendar-week"></i> Son 7 Gün (Haftalık)
+                    </button>
+                    <button type="button" class="range-pill-btn" data-range="monthly" onclick="setPeriod('monthly')">
+                        <i class="fa-solid fa-calendar-days"></i> Son 30 Gün (Aylık)
+                    </button>
+                    <button type="button" class="range-pill-btn" data-range="all" onclick="setPeriod('all')">
+                        <i class="fa-solid fa-calendar"></i> Tüm Zamanlar
+                    </button>
+                    <button type="button" class="range-pill-btn" data-range="custom" onclick="setPeriod('custom')">
+                        <i class="fa-solid fa-sliders"></i> Özel Tarih
+                    </button>
+                </div>
+
+                <!-- Export to Excel Button -->
+                <button type="button" id="btnExportExcel" class="excel-export-btn" onclick="exportToExcel()">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span>Excel Olarak İndir (.xlsx)</span>
+                </button>
+            </div>
+
+            <!-- Custom Date Pickers & Instant Search -->
+            <div class="toolbar-bottom-row">
+                <div id="customDateRow" class="custom-date-container" style="display: none;">
+                    <label for="startDateInput" style="font-size:0.85rem; font-weight:600; color:var(--text-muted);">Başlangıç:</label>
+                    <input type="date" id="startDateInput" class="custom-date-input">
+                    <label for="endDateInput" style="font-size:0.85rem; font-weight:600; color:var(--text-muted);">Bitiş:</label>
+                    <input type="date" id="endDateInput" class="custom-date-input">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="loadReportData()">Uygula</button>
+                </div>
+
+                <div class="search-box-wrapper">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="searchInput" placeholder="Sicil no veya personel adı ile ara..." oninput="onSearchChange()">
+                </div>
+
+                <button type="button" class="btn btn-outline btn-sm" onclick="loadReportData()" title="Verileri Yenile">
+                    <i class="fa-solid fa-rotate"></i> Yenile
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Report Data Table -->
+        <div class="table-card">
+            <div class="table-header-bar">
+                <h2>
+                    <i class="fa-solid fa-table-list text-emerald"></i>
+                    <span>Personel Çalışma Saatleri Listesi</span>
+                </h2>
+                <span id="recordCountBadge" style="font-size:0.85rem; color:var(--text-muted); font-weight:600;">- Kayıt</span>
+            </div>
+
+            <div class="table-responsive-container">
+                <table class="report-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px; text-align: center;">#</th>
+                            <th>Sicil Kodu</th>
+                            <th>Personel Adı Soyadı</th>
+                            <th>Rol / Yetki</th>
+                            <th style="text-align: center;">Çalışılan Gün</th>
+                            <th style="text-align: center;">Giriş / Çıkış</th>
+                            <th style="text-align: right;">Toplam Süre (Saat)</th>
+                            <th>Toplam Süre</th>
+                            <th style="text-align: center;">Anlık Durum</th>
+                            <th style="text-align: center;">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportTableBody">
+                        <tr>
+                            <td colspan="10" style="text-align:center; padding: 40px; color: var(--text-muted);">
+                                <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 8px; display:block;"></i>
+                                Veriler yükleniyor, lütfen bekleyin...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Detail Log Modal -->
+    <div id="detailModal" class="modal-overlay" onclick="closeDetailModal(event)">
+        <div class="modal-dialog" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>
+                    <i class="fa-solid fa-clock-rotate-left text-emerald"></i>
+                    <span id="modalEmployeeName">Personel Mesai Hareketleri</span>
+                </h3>
+                <button type="button" class="modal-close-btn" onclick="closeDetailModal()">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <div>
+                        <span id="modalEmployeeCode" style="font-weight:700; color:var(--text-main); margin-right:12px;"></span>
+                        <span id="modalTotalHours" style="color:#1B4332; font-weight:700;"></span>
+                    </div>
+                    <span id="modalPeriodText" style="font-size: 0.85rem; color: var(--text-muted);"></span>
+                </div>
+                <div class="table-responsive-container">
+                    <table class="log-timeline-table">
+                        <thead>
+                            <tr>
+                                <th>Tarih & Saat</th>
+                                <th>Hareket Türü</th>
+                                <th>Konum / Şantiye</th>
+                                <th>Cihaz Bilgisi</th>
+                                <th>IP Adresi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalLogsBody">
+                            <tr>
+                                <td colspan="5" style="text-align:center; padding:20px; color:var(--text-muted);">Yükleniyor...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Script -->
+    <script src="/static/reports.js?v=20261104_1"></script>
+</body>
+</html>
