@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saha Mesai Takip Sistemi - Web Attendance</title>
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/style.css?v=20261005_1">
+</head>
+<body>
+
+    <div class="app-container">
+
+        <!-- ========================================== -->
+        <!-- 1. LOGIN VIEW (Çalışan ve Admin Giriş Ekranı) -->
+        <!-- ========================================== -->
+        <div id="loginView" class="view-container active-view">
+            <div class="login-card-wrapper">
+                <div class="card login-card">
+                    <div class="login-header">
+                        <div class="login-logo-icon">
+                            <i class="fa-solid fa-user-clock"></i>
+                        </div>
+                        <h1>Saha Mesai Takip</h1>
+                        <p class="login-subtitle">Lütfen giriş türünüzü seçiniz</p>
+                    </div>
+
+                    <!-- Login Mode Switcher Tabs -->
+                    <div class="login-mode-tabs">
+                        <button type="button" id="loginTabEmpBtn" class="login-tab-btn active" onclick="switchLoginMode('employee')">
+                            <i class="fa-solid fa-user-check"></i> Çalışan Girişi
+                        </button>
+                        <button type="button" id="loginTabAdminBtn" class="login-tab-btn" onclick="switchLoginMode('admin')">
+                            <i class="fa-solid fa-user-shield"></i> Yönetici Girişi
+                        </button>
+                    </div>
+
+                    <!-- Employee Login Form -->
+                    <form id="loginForm" onsubmit="event.preventDefault(); handleLogin();">
+                        <div class="form-group">
+                            <label for="loginUserIdInput">Çalışan Adı / Kodu <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-user input-icon"></i>
+                                <input type="text" id="loginUserIdInput" placeholder="Örn: Türker Şahin veya MCS-1001" required autofocus>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="loginPasswordInput">Çalışan Şifresi <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-key input-icon"></i>
+                                <input type="password" id="loginPasswordInput" placeholder="••••••••" required>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="loginSubmitBtn" class="btn btn-emerald btn-block">
+                            <span>Saha Ekranına Giriş Yap</span>
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </form>
+
+                    <!-- Admin Login Form (Hidden by default) -->
+                    <form id="adminLoginForm" class="hidden-form" onsubmit="event.preventDefault(); handleAdminLogin();">
+                        <div class="form-group">
+                            <label for="adminCodeInput">Yönetici Kodu <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-user-shield input-icon"></i>
+                                <input type="text" id="adminCodeInput" placeholder="Örn: admin" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="adminPasswordInput">Yönetici Şifresi <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-key input-icon"></i>
+                                <input type="password" id="adminPasswordInput" placeholder="••••••••" required>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="adminLoginSubmitBtn" class="btn btn-emerald btn-block">
+                            <span>Yönetici Paneline Giriş Yap</span>
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </button>
+                    </form>
+
+                    <div class="login-footer">
+                        <i class="fa-solid fa-shield-halved"></i> © 2026 MCS
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 2. DASHBOARD VIEW (Ana Mesai Ekranı) -->
+        <!-- ========================================== -->
+        <div id="dashboardView" class="view-container hidden-view">
+
+            <!-- Header -->
+            <header class="app-header">
+                <div class="logo-area">
+                    <div class="logo-icon">
+                        <i class="fa-solid fa-user-clock"></i>
+                    </div>
+                    <div>
+                        <h1>Mesai Takip</h1>
+                        <p class="subtitle" id="userWelcomeText">Hoş geldiniz</p>
+                    </div>
+                </div>
+                
+                <div class="header-actions">
+                    <button id="openHistoryModalBtn" class="btn btn-outline-emerald btn-sm">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Geçmiş Hareketlerim
+                    </button>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="openPasswordModal('self')" title="Şifremi Değiştir">
+                        <i class="fa-solid fa-key"></i> Şifremi Değiştir
+                    </button>
+                    <button id="logoutBtn" class="btn btn-ghost btn-sm" onclick="handleLogout()" title="Profil Değiştir / Çıkış Yap">
+                        <i class="fa-solid fa-right-from-bracket"></i> Çıkış
+                    </button>
+                </div>
+            </header>
+
+            <main class="main-content">
+                <!-- Live Status Card -->
+                <section class="card status-card">
+                    <div class="status-header">
+                        <div class="status-title-group">
+                            <i class="fa-solid fa-chart-line"></i>
+                            <span class="status-title">ANLIK MESAİ DURUMUNUZ</span>
+                        </div>
+                        <span class="status-badge status-offline" id="statusBadge">
+                            <i class="fa-solid fa-circle-dot"></i> Yükleniyor...
+                        </span>
+                    </div>
+
+                    <div class="status-details-grid">
+                        <div class="status-detail-item">
+                            <span class="detail-label">Son Hareket Türü</span>
+                            <span class="detail-value" id="lastActionVal">-</span>
+                        </div>
+                        <div class="status-detail-item">
+                            <span class="detail-label">Son Konum Açıklaması</span>
+                            <span class="detail-value" id="lastLocationVal">-</span>
+                        </div>
+                        <div class="status-detail-item">
+                            <span class="detail-label">Son İşlem Zamanı</span>
+                            <span class="detail-value" id="lastTimeVal">-</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Action Panel (Mesai Bildirimi) -->
+                <section class="card action-card">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-location-crosshairs"></i> Mesai Bildirimi Oluştur</h2>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="locationDescInput">
+                            Konum Açıklaması <span class="required">*</span>
+                        </label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-building input-icon"></i>
+                            <input type="text" id="locationDescInput" placeholder="Örn: Saha veya Proje Notu" value="Saha">
+                        </div>
+                    </div>
+
+                    <!-- 2-Column Info Boxes (Cihaz & Ağ/GPS Bilgisi) -->
+                    <div class="info-boxes-grid">
+                        <!-- Sol Kutu: Cihaz Bilgisi -->
+                        <div class="info-box">
+                            <div class="info-box-header">
+                                <div class="info-box-title-group">
+                                    <i class="fa-solid fa-desktop info-box-icon"></i>
+                                    <span class="info-box-title">Cihaz Bilgisi</span>
+                                </div>
+                                <button type="button" id="refreshDeviceBtn" class="btn-icon-refresh" title="Cihaz Bilgisini Yenile">
+                                    <i class="fa-solid fa-rotate-right"></i>
+                                </button>
+                            </div>
+                            <div class="info-box-content">
+                                <div class="info-row">
+                                    <span class="info-label">Cihaz:</span>
+                                    <span class="info-val" id="deviceModelVal">Yükleniyor...</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Tarayıcı:</span>
+                                    <span class="info-val" id="browserInfoVal">Yükleniyor...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sağ Kutu: Ağ ve Konum Bilgisi -->
+                        <div class="info-box">
+                            <div class="info-box-header">
+                                <div class="info-box-title-group">
+                                    <i class="fa-solid fa-wifi info-box-icon"></i>
+                                    <span class="info-box-title">Ağ ve Konum Bilgisi</span>
+                                </div>
+                                <button type="button" id="refreshNetworkGpsBtn" class="btn-icon-refresh" title="Ağ ve GPS Bilgisini Yenile">
+                                    <i class="fa-solid fa-rotate-right"></i>
+                                </button>
+                            </div>
+                            <div class="info-box-content">
+                                <div class="info-row">
+                                    <span class="info-label">Açık Adres:</span>
+                                    <span class="info-val" id="resolvedAddressVal">Alınıyor...</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Bağlantı Durumu:</span>
+                                    <span class="info-val" id="connectionStatusVal">Aktif (Çevrimiçi)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons-grid">
+                        <button id="checkInBtn" class="btn btn-checkin">
+                            <i class="fa-solid fa-right-to-bracket"></i>
+                            <span>İŞE BAŞLA (Check-In)</span>
+                        </button>
+                        <button id="checkOutBtn" class="btn btn-checkout">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                            <span>BİTİR / ÇIKIŞ (Check-Out)</span>
+                        </button>
+                    </div>
+                </section>
+            </main>
+
+            <!-- Footer -->
+            <footer class="app-footer">
+                <p>&copy; 2026 MCS Tüm hakları saklıdır.</p>
+            </footer>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 3. ADMIN DASHBOARD VIEW (Admin Yönetim Paneli) -->
+        <!-- ========================================== -->
+        <div id="adminDashboardView" class="view-container hidden-view">
+            <!-- Header -->
+            <header class="app-header admin-header">
+                <div class="logo-area">
+                    <div class="logo-icon admin-logo-icon">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <div>
+                        <h1>Admin Yönetim Paneli</h1>
+                        <p class="subtitle" id="adminWelcomeText">Hoş geldiniz, Yönetici</p>
+                    </div>
+                </div>
+                
+                <div class="header-actions">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="openPasswordModal('self')" title="Şifremi Değiştir">
+                        <i class="fa-solid fa-key"></i> Şifremi Değiştir
+                    </button>
+                    <button id="adminLogoutBtn" class="btn btn-ghost btn-sm" onclick="handleLogout()" title="Çıkış Yap">
+                        <i class="fa-solid fa-right-from-bracket"></i> Çıkış
+                    </button>
+                </div>
+            </header>
+
+            <!-- Admin Main Navigation Tabs -->
+            <div class="admin-nav-tabs">
+                <button type="button" id="adminTabReportsBtn" class="admin-nav-btn active" onclick="switchAdminTab('reports')">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Mesai Hareketleri & Raporlama</span>
+                </button>
+                <button type="button" id="adminTabUsersBtn" class="admin-nav-btn" onclick="switchAdminTab('users')">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span>Kullanıcı / Çalışan Yönetimi</span>
+                </button>
+                <button type="button" id="adminTabTerminalsBtn" class="admin-nav-btn" onclick="switchAdminTab('terminals')">
+                    <i class="fa-solid fa-id-card"></i>
+                    <span>Kiosk Terminalleri</span>
+                </button>
+            </div>
+
+            <!-- TAB 1: Mesai Hareketleri & Raporlama -->
+            <main id="adminReportsSection" class="main-content">
+                <div class="reports-two-col-grid">
+
+                    <!-- SOL ALAN: Çalışana Özel Mesai Raporu -->
+                    <section class="card">
+                        <div class="card-header admin-section-header">
+                            <div>
+                                <h2><i class="fa-solid fa-user-gear"></i> Çalışana Özel Mesai Raporu</h2>
+                                <p class="subtitle">Çalışan bazında tarih filtrelenmiş mesai hareketleri ve çalışma saati analizleri</p>
+                            </div>
+                        </div>
+
+                        <!-- Employee Search & Filter Controls -->
+                        <div class="emp-report-controls">
+                            <!-- Search & Select Bar -->
+                            <div class="emp-search-group">
+                                <label for="employeeReportSelect"><i class="fa-solid fa-magnifying-glass"></i> Çalışan Seç / Arayın:</label>
+                                <div class="input-wrapper">
+                                    <i class="fa-solid fa-user-gear input-icon"></i>
+                                    <select id="employeeReportSelect" class="custom-select employee-select-input" onchange="onEmployeeSelectChange()">
+                                        <option value="">-- Lütfen Çalışan Seçiniz --</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Time Period Toggle Buttons -->
+                            <div class="emp-period-toggle-group">
+                                <span class="toggle-label"><i class="fa-solid fa-clock"></i> Zaman Aralığı:</span>
+                                <div class="period-buttons">
+                                    <button type="button" class="emp-range-btn" data-emp-range="daily" onclick="setEmployeeReportRange('daily')">
+                                        <i class="fa-solid fa-calendar-day"></i> Bugün (Daily)
+                                    </button>
+                                    <button type="button" class="emp-range-btn active" data-emp-range="weekly" onclick="setEmployeeReportRange('weekly')">
+                                        <i class="fa-solid fa-calendar-week"></i> Bu Hafta (Weekly)
+                                    </button>
+                                    <button type="button" class="emp-range-btn" data-emp-range="monthly" onclick="setEmployeeReportRange('monthly')">
+                                        <i class="fa-solid fa-calendar-days"></i> Bu Ay (Monthly)
+                                    </button>
+                                    <button type="button" class="emp-range-btn" data-emp-range="custom" onclick="setEmployeeReportRange('custom')">
+                                        <i class="fa-solid fa-calendar-plus"></i> Özel Tarih
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Custom Date Range Pickers (Toggled when Custom is selected) -->
+                        <div id="customDateRangeBox" class="custom-date-box hidden-view mt-3">
+                            <div class="date-picker-group">
+                                <div>
+                                    <label for="empReportStartDate"><i class="fa-solid fa-calendar"></i> Başlangıç Tarihi:</label>
+                                    <input type="date" id="empReportStartDate" class="custom-date-input">
+                                </div>
+                                <div>
+                                    <label for="empReportEndDate"><i class="fa-solid fa-calendar"></i> Bitiş Tarihi:</label>
+                                    <input type="date" id="empReportEndDate" class="custom-date-input">
+                                </div>
+                                <div class="date-picker-action">
+                                    <button type="button" class="btn btn-emerald btn-sm" onclick="applyCustomDateFilter()">
+                                        <i class="fa-solid fa-filter"></i> Tarihleri Uygula
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Employee Summary Card -->
+                        <div id="empSummaryCard" class="employee-summary-card mt-4">
+                            <div class="summary-badge-item summary-user">
+                                <div class="summary-icon icon-sage">
+                                    <i class="fa-solid fa-user-check"></i>
+                                </div>
+                                <div class="summary-text">
+                                    <span class="summary-label">Seçili Çalışan & ID</span>
+                                    <span class="summary-value" id="empSummaryName">Çalışan Seçilmedi</span>
+                                    <small id="empSummaryCode" class="summary-subtext">Lütfen yukarıdaki menüden çalışan seçiniz</small>
+                                </div>
+                            </div>
+
+                            <div class="summary-badge-item summary-records">
+                                <div class="summary-icon icon-blue">
+                                    <i class="fa-solid fa-clipboard-list"></i>
+                                </div>
+                                <div class="summary-text">
+                                    <span class="summary-label">Toplam Mesai Kaydı / Vardiya</span>
+                                    <span class="summary-value" id="empSummaryRecords">0 Kayıt</span>
+                                    <small class="summary-subtext">Seçilen dönemdeki hareket sayısı</small>
+                                </div>
+                            </div>
+
+                            <div class="summary-badge-item summary-hours">
+                                <div class="summary-icon icon-coral">
+                                    <i class="fa-solid fa-hourglass-half"></i>
+                                </div>
+                                <div class="summary-text">
+                                    <span class="summary-label">Tahmini Toplam Çalışma Saati</span>
+                                    <span class="summary-value" id="empSummaryWorkHours">0.0 Saat</span>
+                                    <small class="summary-subtext">Giriş ve çıkış saatleri arasındaki süre</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filtered Employee Attendance Table -->
+                        <div class="table-responsive mt-4">
+                            <table class="history-table admin-report-table">
+                                <thead>
+                                    <tr>
+                                        <th>Tarih & Saat</th>
+                                        <th>İşlem Türü</th>
+                                        <th>Konum / Açık Adres</th>
+                                        <th>Cihaz Bilgisi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="empReportTableBody">
+                                    <tr>
+                                        <td colspan="4" class="text-center py-4 text-muted">Lütfen raporlarını görüntülemek için yukarıdan bir çalışan seçiniz.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <!-- SAĞ ALAN: Genel Mesai Raporları -->
+                    <section class="card">
+                        <div class="card-header admin-section-header">
+                            <div>
+                                <h2><i class="fa-solid fa-layer-group"></i> Genel Mesai Raporları</h2>
+                                <p class="subtitle">Tüm çalışanların genel giriş/çıkış hareketleri ve özet sayıları</p>
+                            </div>
+
+                            <!-- Filter Tab Group (Günlük / Haftalık / Aylık / Tümü) -->
+                            <div class="report-filter-group mt-2">
+                                <button type="button" class="filter-tab-btn" data-filter="daily" onclick="filterReports('daily')">
+                                    <i class="fa-solid fa-calendar-day"></i> Günlük
+                                </button>
+                                <button type="button" class="filter-tab-btn active" data-filter="weekly" onclick="filterReports('weekly')">
+                                    <i class="fa-solid fa-calendar-week"></i> Haftalık
+                                </button>
+                                <button type="button" class="filter-tab-btn" data-filter="monthly" onclick="filterReports('monthly')">
+                                    <i class="fa-solid fa-calendar-days"></i> Aylık
+                                </button>
+                                <button type="button" class="filter-tab-btn" data-filter="all" onclick="filterReports('all')">
+                                    <i class="fa-solid fa-layer-group"></i> Tümü
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Summary Stats Bar -->
+                        <div class="admin-stats-grid">
+                            <div class="admin-stat-card">
+                                <div class="stat-icon-wrapper icon-blue">
+                                    <i class="fa-solid fa-list-check"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <span class="stat-label">Toplam Hareket</span>
+                                    <span class="stat-value" id="statTotalLogs">0</span>
+                                </div>
+                            </div>
+                            <div class="admin-stat-card">
+                                <div class="stat-icon-wrapper icon-green">
+                                    <i class="fa-solid fa-right-to-bracket"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <span class="stat-label">Giriş (Check-In)</span>
+                                    <span class="stat-value" id="statCheckIns">0</span>
+                                </div>
+                            </div>
+                            <div class="admin-stat-card">
+                                <div class="stat-icon-wrapper icon-red">
+                                    <i class="fa-solid fa-right-from-bracket"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <span class="stat-label">Çıkış (Check-Out)</span>
+                                    <span class="stat-value" id="statCheckOuts">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- General Attendance Reports Table -->
+                        <div class="table-responsive mt-4">
+                            <table class="history-table admin-report-table">
+                                <thead>
+                                    <tr>
+                                        <th>Çalışan Adı / ID</th>
+                                        <th>İşlem Türü</th>
+                                        <th>Tarih & Saat</th>
+                                        <th>Konum </th>
+                                        <th>Açık Adres</th>
+                                        <th>Cihaz Bilgisi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adminReportTableBody">
+                                    <tr>
+                                        <td colspan="6" class="text-center py-4">Raporlar yükleniyor...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                </div>
+            </main>
+
+            <!-- TAB 2: Kullanıcı / Çalışan Oluşturma Formu (MSSQL) -->
+            <main id="adminUsersSection" class="main-content hidden-view">
+                <div class="admin-two-col-grid">
+                    <!-- Form Card -->
+                    <section class="card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-user-plus"></i> Kullanıcı / Çalışan Oluştur</h2>
+                            <p class="subtitle">Sisteme yeni saha çalışanı veya yönetici ekleyin</p>
+                        </div>
+
+                        <form id="createUserForm" onsubmit="event.preventDefault(); handleCreateUser();">
+                            <div class="form-group">
+                                <label for="newFullNameInput">Çalışan Adı Soyadı <span class="required">*</span></label>
+                                <div class="input-wrapper">
+                                    <i class="fa-solid fa-user input-icon"></i>
+                                    <input type="text" id="newFullNameInput" placeholder="Örn: Ahmet Yılmaz" required>
+                                </div>
+                            </div>
+
+                            <div class="form-row-2col">
+                                <div class="form-group">
+                                    <label for="newEmployeeCodeInput">Çalışan Kodu / ID <span class="required">*</span></label>
+                                    <div class="input-wrapper">
+                                        <i class="fa-solid fa-id-badge input-icon"></i>
+                                        <input type="text" id="newEmployeeCodeInput" placeholder="Örn: EMP-101 veya 101" required>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="newCardUidInput">Kart UID (RFID Kart)</label>
+                                    <div class="input-wrapper">
+                                        <i class="fa-solid fa-credit-card input-icon"></i>
+                                        <input type="text" id="newCardUidInput" placeholder="Örn: RFID-88421">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-row-2col">
+                                <div class="form-group">
+                                    <label for="newPasswordInput">Giriş Şifresi <span class="required">*</span></label>
+                                    <div class="input-wrapper">
+                                        <i class="fa-solid fa-lock input-icon"></i>
+                                        <input type="password" id="newPasswordInput" placeholder="En az 8 karakter" minlength="8" autocomplete="new-password" required>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="newRoleSelect">Kullanıcı Rolü <span class="required">*</span></label>
+                                    <div class="input-wrapper">
+                                        <i class="fa-solid fa-user-gear input-icon"></i>
+                                        <select id="newRoleSelect" class="custom-select" required>
+                                            <option value="EMPLOYEE" selected>EMPLOYEE (Saha Çalışanı)</option>
+                                            <option value="ADMIN">ADMIN (Sistem Yöneticisi)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="submit" id="createUserSubmitBtn" class="btn btn-emerald btn-block mt-3">
+                                <i class="fa-solid fa-user-check"></i>
+                                <span>Veritabanına Kaydet</span>
+                            </button>
+                        </form>
+                    </section>
+
+                    <!-- User List Card -->
+                    <section class="card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-users"></i> Kayıtlı Kullanıcılar</h2>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Kodu / ID</th>
+                                        <th>Ad Soyad</th>
+                                        <th>Rol</th>
+                                        <th>Kart UID</th>
+                                        <th>İşlemler</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="registeredUsersTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-4">Kullanıcılar yükleniyor...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </main>
+
+            <!-- TAB 3: Kiosk Terminalleri -->
+            <main id="adminTerminalsSection" class="main-content hidden-view">
+                <div class="admin-two-col-grid">
+                    <!-- Terminal Oluşturma -->
+                    <section class="card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-plus"></i> Kiosk Terminali Ekle</h2>
+                            <p class="subtitle">Kart okuyuculu kiosk için terminal kaydı ve anahtar oluşturun</p>
+                        </div>
+
+                        <form id="createTerminalForm" onsubmit="event.preventDefault(); handleCreateTerminal();">
+                            <div class="form-row-2col">
+                                <div class="form-group">
+                                    <label for="newTerminalCodeInput">Terminal Kodu <span class="required">*</span></label>
+                                    <div class="input-wrapper">
+                                        <i class="fa-solid fa-barcode input-icon"></i>
+                                        <input type="text" id="newTerminalCodeInput" placeholder="Örn: KIOSK-ATOLYE-1" maxlength="50" required>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="newTerminalNameInput">Terminal Adı <span class="required">*</span></label>
+                                    <div class="input-wrapper">
+                                        <i class="fa-solid fa-tag input-icon"></i>
+                                        <input type="text" id="newTerminalNameInput" placeholder="Örn: Atölye Giriş Kapısı" maxlength="100" required>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="newTerminalLocationSelect">Konum <span class="required">*</span></label>
+                                <div class="input-wrapper">
+                                    <i class="fa-solid fa-location-dot input-icon"></i>
+                                    <select id="newTerminalLocationSelect" class="custom-select" required>
+                                        <option value="">Konumlar yükleniyor...</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button type="submit" id="createTerminalSubmitBtn" class="btn btn-emerald btn-block mt-3">
+                                <i class="fa-solid fa-key"></i>
+                                <span>Terminal Oluştur ve Anahtar Üret</span>
+                            </button>
+                        </form>
+
+                        <!-- Anahtar yalnızca bir kez gösterilir -->
+                        <div id="terminalKeyBox" class="terminal-key-box hidden-view">
+                            <div class="terminal-key-title">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                <span id="terminalKeyTitle">Terminal anahtarı</span>
+                            </div>
+                            <p class="terminal-key-hint">
+                                Bu anahtar <strong>yalnızca şimdi</strong> gösterilir. Aşağıdaki içeriği kiosk bilgisayarında
+                                <code>kiosk.html</code> ile aynı klasördeki <code>config.js</code> dosyasına kaydedin. Kaybederseniz "Yeni Anahtar" ile yenisini üretebilirsiniz.
+                            </p>
+                            <pre id="terminalConfigSnippet" class="terminal-config-snippet"></pre>
+                            <div class="terminal-key-actions">
+                                <button type="button" class="btn btn-emerald btn-sm" onclick="downloadTerminalConfig()">
+                                    <i class="fa-solid fa-download"></i> config.js İndir
+                                </button>
+                                <a class="btn btn-outline-emerald btn-sm" href="/kiosk/download" download="kiosk.html">
+                                    <i class="fa-solid fa-download"></i> kiosk.html İndir
+                                </a>
+                                <button type="button" class="btn btn-outline-emerald btn-sm" onclick="copyTerminalConfig()">
+                                    <i class="fa-solid fa-copy"></i> Kopyala
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="hideTerminalKey()">
+                                    <i class="fa-solid fa-check"></i> Kaydettim, Gizle
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Terminal Listesi -->
+                    <section class="card">
+                        <div class="card-header admin-section-header">
+                            <h2><i class="fa-solid fa-id-card"></i> Kayıtlı Terminaller</h2>
+                            <div class="terminal-key-actions">
+                                <a class="btn btn-sm btn-outline-emerald" href="/kiosk/download" download="kiosk.html" title="Kiosk ekranı dosyası (tüm kiosklar için aynı)">
+                                    <i class="fa-solid fa-download"></i> kiosk.html İndir
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-emerald" onclick="fetchTerminals()" title="Yenile">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Yenile
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Terminal</th>
+                                        <th>Durum</th>
+                                        <th>Son Görülme</th>
+                                        <th>Son Tanınmayan Kart</th>
+                                        <th>İşlemler</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="terminalsTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-4">Terminaller yükleniyor...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="terminal-key-hint mt-3">
+                            <i class="fa-solid fa-circle-info"></i>
+                            Yeni bir kartı tanımlamak için kartı kioskta okutun; okuyucunun gönderdiği UID "Son Tanınmayan Kart"
+                            sütununda görünür. Bu değeri kullanıcının Kart UID alanına girin.
+                        </p>
+                    </section>
+                </div>
+            </main>
+
+            <!-- Footer -->
+            <footer class="app-footer">
+                <p>&copy; 2026 MCS.</p>
+            </footer>
+        </div>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 3. GEÇMİŞ MESAİ HAREKETLERİ MODAL / POPUP -->
+    <!-- ========================================== -->
+    <div id="historyModal" class="modal-overlay hidden-modal">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <div>
+                        <h3>Geçmiş Mesai Hareketlerim</h3>
+                        <p class="modal-subtitle" id="modalUserSubtitle">Çalışan ID: -</p>
+                    </div>
+                </div>
+                <div class="modal-header-actions">
+                    <button id="refreshHistoryBtn" class="btn btn-sm btn-outline-emerald" title="Yenile">
+                        <i class="fa-solid fa-arrows-rotate"></i> Yenile
+                    </button>
+                    <button id="closeHistoryModalBtn" class="modal-close-btn" title="Kapat">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Hareket</th>
+                                <th>Tarih & Saat</th>
+                                <th>Konum Açıklaması</th>
+                                <th>Açık Adres</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <tr>
+                                <td colspan="4" class="text-center py-4">Kayıtlar yükleniyor...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="closeModalFooterBtn" class="btn btn-secondary btn-sm">Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 4. İŞLEM ONAY POPUP (MODAL) -->
+    <!-- ========================================== -->
+    <div id="confirmationModal" class="modal-overlay hidden-modal">
+        <div class="modal-dialog confirm-modal-dialog">
+            <div class="confirm-modal-header">
+                <div class="confirm-icon-ring">
+                    <i class="fa-solid fa-clipboard-check"></i>
+                </div>
+                <h3 class="confirm-modal-title" id="confirmModalTitle">Mesai Hareketi Onayı</h3>
+                <span id="confirmActionBadge" class="badge-tag badge-checkin">GİRİŞ (CHECK-IN)</span>
+            </div>
+
+            <div class="modal-body confirm-modal-body">
+                <!-- Bilgilendirme Uyarısı Banner -->
+                <div class="confirm-notice-banner">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>Cihaz ve konum (adres) bilgilerinizin alındığı kabul edilerek mesai kaydınız oluşturulacaktır.</span>
+                </div>
+
+                <div class="confirm-summary-grid">
+                    <div class="confirm-item">
+                        <span class="confirm-item-label"><i class="fa-solid fa-clock"></i> İşlem Zamanı</span>
+                        <span class="confirm-item-value" id="confirmTimeVal">-</span>
+                    </div>
+                    <div class="confirm-item">
+                        <span class="confirm-item-label"><i class="fa-solid fa-building"></i> Konum Açıklaması</span>
+                        <span class="confirm-item-value" id="confirmLocationVal">-</span>
+                    </div>
+                    <div class="confirm-item">
+                        <span class="confirm-item-label"><i class="fa-solid fa-map-location-dot"></i> Açık Adres</span>
+                        <span class="confirm-item-value" id="confirmAddressVal">-</span>
+                    </div>
+                    <div class="confirm-item">
+                        <span class="confirm-item-label"><i class="fa-solid fa-laptop-code"></i> Cihaz & Tarayıcı</span>
+                        <span class="confirm-item-value" id="confirmDeviceVal">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="confirm-modal-footer" style="display: flex; gap: 10px;">
+                <button type="button" id="confirmCancelBtn" class="btn btn-secondary" style="flex: 1;">
+                    <i class="fa-solid fa-xmark"></i>
+                    <span>İptal</span>
+                </button>
+                <button type="button" id="confirmSubmitBtn" class="btn btn-emerald" style="flex: 2;">
+                    <i class="fa-solid fa-check"></i>
+                    <span>Onayla ve Kaydet</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 5. ŞİFRE DEĞİŞTİRME / BELİRLEME POPUP -->
+    <!-- ========================================== -->
+    <div id="passwordModal" class="modal-overlay hidden-modal">
+        <div class="modal-dialog password-modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fa-solid fa-key"></i>
+                    <div>
+                        <h3 id="passwordModalTitle">Şifremi Değiştir</h3>
+                        <p class="modal-subtitle" id="passwordModalSubtitle"></p>
+                    </div>
+                </div>
+                <div class="modal-header-actions">
+                    <button type="button" class="modal-close-btn" onclick="closePasswordModal()" title="Kapat">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <form id="passwordForm" onsubmit="event.preventDefault(); submitPasswordModal();">
+                <div class="modal-body">
+                    <div class="form-group" id="currentPasswordGroup">
+                        <label for="currentPasswordInput">Mevcut Şifre <span class="required">*</span></label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-lock-open input-icon"></i>
+                            <input type="password" id="currentPasswordInput" placeholder="••••••••" autocomplete="current-password">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="newPasswordModalInput">Yeni Şifre <span class="required">*</span></label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-lock input-icon"></i>
+                            <input type="password" id="newPasswordModalInput" placeholder="En az 8 karakter" minlength="8" autocomplete="new-password" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirmPasswordModalInput">Yeni Şifre (Tekrar) <span class="required">*</span></label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-lock input-icon"></i>
+                            <input type="password" id="confirmPasswordModalInput" placeholder="En az 8 karakter" minlength="8" autocomplete="new-password" required>
+                        </div>
+                    </div>
+
+                    <p class="terminal-key-hint" id="passwordModalHint"></p>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="closePasswordModal()">İptal</button>
+                    <button type="submit" id="passwordModalSubmitBtn" class="btn btn-emerald btn-sm">
+                        <i class="fa-solid fa-check"></i> <span>Kaydet</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- JavaScript -->
+    <script src="/static/app.js?v=20261005_1"></script>
+</body>
+</html>
