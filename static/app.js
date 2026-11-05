@@ -384,6 +384,28 @@ function requestGpsLocation(isManual = false) {
     );
 }
 
+function ensureGpsCoords(timeoutMs = 4000) {
+    if (currentGpsCoords) return Promise.resolve(currentGpsCoords);
+    if (!navigator.geolocation) return Promise.resolve(null);
+    return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                currentGpsCoords = {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                };
+                try {
+                    await fetchReverseGeocode(position.coords.latitude, position.coords.longitude);
+                } catch (_) {}
+                resolve(currentGpsCoords);
+            },
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 }
+        );
+    });
+}
+
 // ----------------------------------------------------
 // Auth & Navigation
 // ----------------------------------------------------
@@ -1545,6 +1567,10 @@ async function executePendingAttendanceAction() {
     }
 
     try {
+        if (!currentGpsCoords && navigator.geolocation) {
+            await ensureGpsCoords(3000);
+        }
+
         const payload = {
             LocationDescription: locationDesc,
             Latitude: currentGpsCoords ? currentGpsCoords.latitude : null,
@@ -1751,6 +1777,11 @@ function initOrRefreshLiveMap() {
             liveLeafletMap.invalidateSize();
         }
     }, 120);
+    setTimeout(() => {
+        if (liveLeafletMap) {
+            liveLeafletMap.invalidateSize();
+        }
+    }, 350);
 
     fetchLiveMapData();
 }
@@ -1759,7 +1790,17 @@ async function fetchLiveMapData() {
     try {
         const response = await adminFetch(`/api/v1/admin/live-map?filter_mode=${encodeURIComponent(activeMapFilterMode)}`);
         if (!response || !response.ok) {
-            console.error("Canlı harita verisi alınamadı");
+            let errMsg = "Canlı harita verisi alınamadı.";
+            try {
+                const errJson = await response.json();
+                if (errJson && errJson.detail) errMsg = errJson.detail;
+            } catch (_) {}
+            console.error("Canlı harita hatası:", errMsg);
+            showToast(errMsg, "error");
+            const listEl = document.getElementById('mapPersonnelList');
+            if (listEl) {
+                listEl.innerHTML = `<div style="text-align:center; padding:24px; color:var(--error); font-size:0.85rem;"><i class="fa-solid fa-triangle-exclamation" style="display:block; margin-bottom:6px; font-size:1.3rem;"></i>${escapeHtml(errMsg)}</div>`;
+            }
             return;
         }
 
@@ -1910,9 +1951,9 @@ function renderMapSidebarPersonnel() {
 
     if (filtered.length === 0) {
         listContainer.innerHTML = `
-            <div style="text-align:center; padding:30px; color:var(--text-muted); font-size:0.85rem;">
-                <i class="fa-solid fa-user-slash" style="font-size:1.5rem; margin-bottom:8px; display:block; opacity:0.5;"></i>
-                Aramaya uygun personel bulunamadı.
+            <div style="text-align:center; padding:28px 12px; color:var(--text-muted); font-size:0.85rem;">
+                <i class="fa-solid fa-map-location-dot" style="font-size:1.6rem; margin-bottom:8px; display:block; opacity:0.5; color:#0284C7;"></i>
+                ${activeMapFilterMode === 'today' ? 'Bugün henüz haritada gösterilecek mesai hareketi bulunmuyor.<br><button type="button" class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="setMapFilterMode(\'all_latest\')"><i class="fa-solid fa-globe"></i> Tüm Son Konumları Göster</button>' : 'Aramaya uygun personel bulunamadı.'}
             </div>
         `;
         return;

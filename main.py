@@ -1629,20 +1629,48 @@ def get_live_map_data(
         without_coords_count = 0
         active_count = 0
 
+        def _safe_parse_dt(dt_val) -> Optional[datetime]:
+            if isinstance(dt_val, datetime):
+                return dt_val
+            if isinstance(dt_val, str) and dt_val.strip():
+                cleaned = dt_val.strip()
+                if "." in cleaned:
+                    base, frac = cleaned.split(".", 1)
+                    cleaned = base + "." + frac[:6]
+                try:
+                    return datetime.fromisoformat(cleaned)
+                except Exception:
+                    try:
+                        return datetime.strptime(cleaned.split(".")[0], "%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        return None
+            return None
+
         for r in rows:
-            has_coords = bool(r.Latitude is not None and r.Longitude is not None and (abs(r.Latitude) > 0.0001 or abs(r.Longitude) > 0.0001))
+            # Koordinatları güvenli float'a çevir
+            lat = None
+            lng = None
+            try:
+                if r.Latitude is not None:
+                    lat = float(r.Latitude)
+                if r.Longitude is not None:
+                    lng = float(r.Longitude)
+            except (ValueError, TypeError):
+                pass
+
+            has_coords = bool(lat is not None and lng is not None and (abs(lat) > 0.0001 or abs(lng) > 0.0001))
             if has_coords:
                 with_coords_count += 1
             else:
                 without_coords_count += 1
 
+            log_dt = _safe_parse_dt(r.LogDateTime) or now_dt
             mins_ago = 0
-            if r.LogDateTime:
-                diff_sec = (now_dt - r.LogDateTime).total_seconds()
-                mins_ago = max(0, int(diff_sec // 60))
+            diff_sec = (now_dt - log_dt).total_seconds()
+            mins_ago = max(0, int(diff_sec // 60))
 
             is_active = bool(
-                r.ActionType == "CHECK_IN" and r.LogDateTime and (now_dt - r.LogDateTime).total_seconds() < 18 * 3600
+                r.ActionType == "CHECK_IN" and (now_dt - log_dt).total_seconds() < 18 * 3600
             )
             if is_active:
                 active_count += 1
@@ -1652,7 +1680,7 @@ def get_live_map_data(
             if status_clean == "completed" and is_active:
                 continue
 
-            time_str = r.LogDateTime.strftime("%H:%M") if r.LogDateTime else "-"
+            time_str = log_dt.strftime("%H:%M")
 
             items.append(
                 LiveMapItem(
@@ -1663,12 +1691,12 @@ def get_live_map_data(
                     Role=str(r.Role or "EMPLOYEE"),
                     ActionType=r.ActionType or "CHECK_IN",
                     LocationDescription=r.LocationDescription or "-",
-                    Latitude=r.Latitude,
-                    Longitude=r.Longitude,
+                    Latitude=lat,
+                    Longitude=lng,
                     DeviceInfo=r.DeviceInfo or "-",
                     IPAddress=r.IPAddress or "-",
                     ResolvedAddress=r.ResolvedAddress or "-",
-                    LogDateTime=r.LogDateTime,
+                    LogDateTime=log_dt,
                     IsCurrentlyActive=is_active,
                     MinutesAgo=mins_ago,
                     TimeFormatted=time_str,
