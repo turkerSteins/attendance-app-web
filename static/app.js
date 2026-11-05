@@ -607,10 +607,17 @@ function showAdminDashboardView() {
         adminDashboardView.classList.add('active-view');
     }
 
-    // Load both employee-specific report & general company reports
-    populateEmployeeDropdown();
-    fetchAttendanceReports(activeReportFilter);
-    fetchRegisteredUsers();
+    // Check if a specific tab was requested (e.g. #map or session redirect)
+    const pendingTab = sessionStorage.getItem('open_admin_tab') || (window.location.hash ? window.location.hash.replace('#', '') : null);
+    if (pendingTab && ADMIN_TABS[pendingTab]) {
+        sessionStorage.removeItem('open_admin_tab');
+        switchAdminTab(pendingTab);
+    } else {
+        // Load default reports & users
+        populateEmployeeDropdown();
+        fetchAttendanceReports(activeReportFilter);
+        fetchRegisteredUsers();
+    }
 }
 
 async function populateEmployeeDropdown() {
@@ -803,6 +810,11 @@ const ADMIN_TABS = {
         btn: 'adminTabReportsBtn',
         section: 'adminReportsSection',
         onShow: () => { populateEmployeeDropdown(); fetchAttendanceReports(activeReportFilter); }
+    },
+    map: {
+        btn: 'adminTabMapBtn',
+        section: 'adminMapSection',
+        onShow: () => { initOrRefreshLiveMap(); }
     },
     users: {
         btn: 'adminTabUsersBtn',
@@ -1700,9 +1712,318 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
+// ==========================================
+// CANLI SAHA HARİTASI (LIVE MAP) KONTROLCÜSÜ
+// ==========================================
+
+let liveLeafletMap = null;
+let mapMarkersLayer = null;
+let liveMapItems = [];
+let activeMapFilterMode = 'today';
+let mapAutoRefreshInterval = null;
+let mapSearchTerm = '';
+let mapMarkersMap = new Map();
+let mapSelectedUserId = null;
+
+function initOrRefreshLiveMap() {
+    const mapElement = document.getElementById('liveMapContainer');
+    if (!mapElement) return;
+
+    if (!liveLeafletMap) {
+        // Harita başlangıç konumu: Türkiye merkezi veya İstanbul
+        liveLeafletMap = L.map('liveMapContainer', {
+            zoomControl: true,
+            scrollWheelZoom: true
+        }).setView([41.0082, 28.9784], 11);
+
+        // OpenStreetMap katmanı
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(liveLeafletMap);
+
+        mapMarkersLayer = L.featureGroup().addTo(liveLeafletMap);
+    }
+
+    // Sekme görünür olduğunda Leaflet boyutunu yeniden hesapla
+    setTimeout(() => {
+        if (liveLeafletMap) {
+            liveLeafletMap.invalidateSize();
+        }
+    }, 120);
+
+    fetchLiveMapData();
+}
+
+async function fetchLiveMapData() {
+    try {
+        const response = await adminFetch(`/api/v1/admin/live-map?filter_mode=${encodeURIComponent(activeMapFilterMode)}`);
+        if (!response || !response.ok) {
+            console.error("Canlı harita verisi alınamadı");
+            return;
+        }
+
+        const data = await response.json();
+        liveMapItems = data.items || [];
+
+        // KPI Sayaçlarını Güncelle
+        const elWithCoords = document.getElementById('mapKpiWithCoords');
+        const elActive = document.getElementById('mapKpiActive');
+        const elCompleted = document.getElementById('mapKpiCompleted');
+        const elWithoutCoords = document.getElementById('mapKpiWithoutCoords');
+
+        if (elWithCoords) elWithCoords.textContent = data.with_coordinates_count || 0;
+        if (elActive) elActive.textContent = data.currently_active_count || 0;
+        if (elCompleted) elCompleted.textContent = Math.max(0, (data.total_personnel_reported || 0) - (data.currently_active_count || 0));
+        if (elWithoutCoords) elWithoutCoords.textContent = data.without_coordinates_count || 0;
+
+        // Harita Pinlerini Çiz
+        renderMapMarkers(liveMapItems);
+
+        // Yan Liste Güncelle
+        renderMapSidebarPersonnel();
+
+    } catch (err) {
+        console.error("Harita verileri çekilirken hata:", err);
+    }
+}
+
+function renderMapMarkers(items) {
+    if (!liveLeafletMap || !mapMarkersLayer) return;
+
+    mapMarkersLayer.clearLayers();
+    mapMarkersMap.clear();
+
+    const validMarkers = [];
+
+    items.forEach(item => {
+        if (!item.HasCoordinates || item.Latitude == null || item.Longitude == null) return;
+
+        const isCheckIn = item.ActionType === 'CHECK_IN';
+        const isActive = item.IsCurrentlyActive;
+
+        // Özel HTML Pin
+        const pinClass = isActive ? 'pin-active' : 'pin-completed';
+        const iconClass = isActive ? 'fa-person-digging' : 'fa-house-user';
+        const pulseHtml = isActive ? '<div class="pin-pulse-ring"></div>' : '';
+
+        const iconHtml = `
+            <div class="pin-bubble ${pinClass}">
+                ${pulseHtml}
+                <i class="fa-solid ${iconClass}"></i>
+            </div>
+        `;
+
+        const customMarkerIcon = L.divIcon({
+            className: 'custom-leaflet-marker',
+            html: iconHtml,
+            iconSize: [36, 36],
+            iconAnchor: [18, 36],
+            popupAnchor: [0, -32]
+        });
+
+        const marker = L.marker([item.Latitude, item.Longitude], {
+            icon: customMarkerIcon,
+            title: item.FullName
+        });
+
+        // Popup HTML Kartı
+        const statusBadge = isActive
+            ? `<span class="badge badge-active">Mesaide</span>`
+            : `<span class="badge badge-idle">Çıkış</span>`;
+
+        const actionText = isCheckIn ? 'Giriş Yaptı' : 'Çıkış Yaptı';
+        const timeAgoText = item.MinutesAgo > 0 ? `${item.MinutesAgo} dk önce` : 'Az önce';
+
+        const popupContent = `
+            <div class="map-popup-card">
+                <div class="map-popup-header">
+                    <strong>${escapeHtml(item.FullName)}</strong>
+                    ${statusBadge}
+                </div>
+                <div class="map-popup-sub">${escapeHtml(item.EmployeeCode)} • ${escapeHtml(item.Role)}</div>
+                
+                <div class="map-popup-row">
+                    <i class="fa-solid fa-clock"></i>
+                    <span><strong>${actionText}:</strong> ${escapeHtml(item.TimeFormatted)} (${timeAgoText})</span>
+                </div>
+
+                <div class="map-popup-row">
+                    <i class="fa-solid fa-building"></i>
+                    <span>${escapeHtml(item.LocationDescription || 'Saha / Şantiye')}</span>
+                </div>
+
+                ${item.ResolvedAddress ? `
+                    <div class="map-popup-row">
+                        <i class="fa-solid fa-map-pin"></i>
+                        <span>${escapeHtml(item.ResolvedAddress)}</span>
+                    </div>
+                ` : ''}
+
+                <div class="map-popup-row">
+                    <i class="fa-solid fa-mobile-screen"></i>
+                    <span>${escapeHtml(item.DeviceInfo || '-')}</span>
+                </div>
+
+                <a href="https://www.google.com/maps?q=${item.Latitude},${item.Longitude}" target="_blank" rel="noopener noreferrer" class="map-popup-btn">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Google Haritalar'da Aç
+                </a>
+            </div>
+        `;
+
+        marker.bindPopup(popupContent);
+
+        // Marker tıklama etkileşimi
+        marker.on('click', () => {
+            highlightSidebarItem(item.UserID);
+        });
+
+        mapMarkersLayer.addLayer(marker);
+        mapMarkersMap.set(item.UserID, marker);
+        validMarkers.push(marker);
+    });
+
+    // Otomatik odaklama (tüm markerları kadraja al)
+    if (validMarkers.length > 0) {
+        try {
+            const bounds = mapMarkersLayer.getBounds();
+            if (bounds.isValid()) {
+                liveLeafletMap.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+            }
+        } catch (_) {}
+    }
+}
+
+function renderMapSidebarPersonnel() {
+    const listContainer = document.getElementById('mapPersonnelList');
+    if (!listContainer) return;
+
+    let filtered = liveMapItems;
+    if (mapSearchTerm) {
+        const query = mapSearchTerm.toLowerCase();
+        filtered = filtered.filter(item => 
+            (item.FullName && item.FullName.toLowerCase().includes(query)) ||
+            (item.EmployeeCode && item.EmployeeCode.toLowerCase().includes(query)) ||
+            (item.LocationDescription && item.LocationDescription.toLowerCase().includes(query))
+        );
+    }
+
+    if (filtered.length === 0) {
+        listContainer.innerHTML = `
+            <div style="text-align:center; padding:30px; color:var(--text-muted); font-size:0.85rem;">
+                <i class="fa-solid fa-user-slash" style="font-size:1.5rem; margin-bottom:8px; display:block; opacity:0.5;"></i>
+                Aramaya uygun personel bulunamadı.
+            </div>
+        `;
+        return;
+    }
+
+    listContainer.innerHTML = filtered.map(item => {
+        const isActive = item.IsCurrentlyActive;
+        const isCheckIn = item.ActionType === 'CHECK_IN';
+        const hasCoords = item.HasCoordinates;
+        const isSelected = item.UserID === mapSelectedUserId;
+
+        const statusDot = isActive
+            ? `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#16A34A; margin-right:4px;"></span><span style="color:#16A34A; font-weight:700;">Giriş (${item.TimeFormatted})</span>`
+            : `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#DC2626; margin-right:4px;"></span><span style="color:#6B7280;">Çıkış (${item.TimeFormatted})</span>`;
+
+        const coordsBadge = hasCoords
+            ? `<span style="color:#0284C7; font-size:0.75rem;"><i class="fa-solid fa-location-dot"></i> Haritada</span>`
+            : `<span style="color:#9CA3AF; font-size:0.75rem;"><i class="fa-solid fa-location-slash"></i> GPS Yok</span>`;
+
+        return `
+            <div class="personnel-map-item ${isSelected ? 'selected' : ''}" id="mapSidebarUser-${item.UserID}" onclick="focusPersonnelOnMap(${item.UserID}, ${item.Latitude}, ${item.Longitude})">
+                <div class="personnel-item-top">
+                    <span class="personnel-item-name">${escapeHtml(item.FullName)}</span>
+                    ${coordsBadge}
+                </div>
+                <div class="personnel-item-meta">
+                    <span>${statusDot}</span>
+                    <span>${escapeHtml(item.LocationDescription || 'Saha')}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function highlightSidebarItem(userId) {
+    mapSelectedUserId = userId;
+    document.querySelectorAll('.personnel-map-item').forEach(el => {
+        el.classList.toggle('selected', el.id === `mapSidebarUser-${userId}`);
+    });
+    const targetEl = document.getElementById(`mapSidebarUser-${userId}`);
+    if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function focusPersonnelOnMap(userId, lat, lng) {
+    highlightSidebarItem(userId);
+
+    if (lat != null && lng != null && (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001)) {
+        if (liveLeafletMap) {
+            liveLeafletMap.flyTo([lat, lng], 16, { duration: 1.0 });
+            const marker = mapMarkersMap.get(userId);
+            if (marker) {
+                setTimeout(() => marker.openPopup(), 400);
+            }
+        }
+    } else {
+        showToast("Bu personelin son hareketinde geçerli bir GPS koordinatı bulunmuyor.", "info");
+    }
+}
+
+function fitAllMapMarkers() {
+    if (!liveLeafletMap || !mapMarkersLayer) return;
+    try {
+        const bounds = mapMarkersLayer.getBounds();
+        if (bounds.isValid()) {
+            liveLeafletMap.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+        } else {
+            showToast("Haritada gösterilecek aktif konum bulunmuyor.", "info");
+        }
+    } catch (_) {}
+}
+
+function setMapFilterMode(mode) {
+    activeMapFilterMode = mode;
+    document.querySelectorAll('[data-map-range]').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-map-range') === mode);
+    });
+    fetchLiveMapData();
+}
+
+function onMapSearchChange() {
+    const input = document.getElementById('mapSearchInput');
+    mapSearchTerm = input ? input.value.trim() : '';
+    renderMapSidebarPersonnel();
+}
+
+function toggleMapAutoRefresh(enabled) {
+    if (mapAutoRefreshInterval) {
+        clearInterval(mapAutoRefreshInterval);
+        mapAutoRefreshInterval = null;
+    }
+
+    if (enabled) {
+        mapAutoRefreshInterval = setInterval(fetchLiveMapData, 30000);
+        showToast("Canlı harita takibi başlatıldı (30 saniyede bir güncellenir).", "success");
+    } else {
+        showToast("Canlı harita takibi durduruldu.", "info");
+    }
+}
+
 // Window Global Attachments for Fail-Proof Inline Handlers
 window.onEmployeeSelectChange = onEmployeeSelectChange;
 window.setEmployeeReportRange = setEmployeeReportRange;
 window.applyCustomDateFilter = applyCustomDateFilter;
 window.fetchEmployeeAttendanceReport = fetchEmployeeAttendanceReport;
 window.populateEmployeeDropdown = populateEmployeeDropdown;
+window.setMapFilterMode = setMapFilterMode;
+window.onMapSearchChange = onMapSearchChange;
+window.toggleMapAutoRefresh = toggleMapAutoRefresh;
+window.focusPersonnelOnMap = focusPersonnelOnMap;
+window.fitAllMapMarkers = fitAllMapMarkers;
+window.initOrRefreshLiveMap = initOrRefreshLiveMap;
+window.fetchLiveMapData = fetchLiveMapData;

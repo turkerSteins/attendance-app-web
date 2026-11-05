@@ -10,8 +10,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/style.css?v=20261005_1">
+    <link rel="stylesheet" href="/static/style.css?v=20261105_1">
 </head>
 <body>
 
@@ -269,6 +271,10 @@
                 <button type="button" id="adminTabReportsBtn" class="admin-nav-btn active" onclick="switchAdminTab('reports')">
                     <i class="fa-solid fa-chart-line"></i>
                     <span>Mesai Hareketleri & Raporlama</span>
+                </button>
+                <button type="button" id="adminTabMapBtn" class="admin-nav-btn" onclick="switchAdminTab('map')">
+                    <i class="fa-solid fa-map-location-dot" style="color:#0284C7;"></i>
+                    <span>Canlı Saha Haritası</span>
                 </button>
                 <a href="/reports" class="admin-nav-btn" style="text-decoration:none; color:inherit; display:flex; align-items:center; gap:8px;">
                     <i class="fa-solid fa-file-excel" style="color:#2E7D32;"></i>
@@ -693,6 +699,104 @@
                 </div>
             </main>
 
+            <!-- TAB 4: Canlı Saha & Konum Haritası -->
+            <main id="adminMapSection" class="main-content hidden-view">
+                <div class="live-map-wrapper">
+                    <!-- Top Toolbar & KPI Overview -->
+                    <div class="card map-toolbar-card">
+                        <div class="map-toolbar-top">
+                            <div>
+                                <h2 style="display:flex; align-items:center; gap:10px; font-size:1.25rem;">
+                                    <i class="fa-solid fa-map-location-dot" style="color:#0284C7;"></i>
+                                    <span>Canlı Saha & Personel Haritası</span>
+                                </h2>
+                                <p class="subtitle">Saha çalışanlarının anlık GPS konumları, çalışma alanları ve son mesai hareketleri</p>
+                            </div>
+
+                            <div class="map-controls-group">
+                                <!-- Zaman Filtresi -->
+                                <div class="period-buttons">
+                                    <button type="button" class="emp-range-btn active" data-map-range="today" onclick="setMapFilterMode('today')">
+                                        <i class="fa-solid fa-calendar-day"></i> Bugün
+                                    </button>
+                                    <button type="button" class="emp-range-btn" data-map-range="last_24h" onclick="setMapFilterMode('last_24h')">
+                                        <i class="fa-solid fa-clock-rotate-left"></i> Son 24 Saat
+                                    </button>
+                                    <button type="button" class="emp-range-btn" data-map-range="all_latest" onclick="setMapFilterMode('all_latest')">
+                                        <i class="fa-solid fa-globe"></i> Tüm Son Konumlar
+                                    </button>
+                                </div>
+
+                                <!-- Otomatik Canlı Takip & Yenile -->
+                                <div class="map-action-buttons">
+                                    <label class="auto-refresh-toggle" title="Her 30 saniyede bir haritayı otomatik günceller">
+                                        <input type="checkbox" id="mapAutoRefreshCheckbox" onchange="toggleMapAutoRefresh(this.checked)">
+                                        <span><i class="fa-solid fa-bolt" style="color:#CA8A04;"></i> Canlı Takip (30s)</span>
+                                    </label>
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="fetchLiveMapData()" title="Şimdi Yenile">
+                                        <i class="fa-solid fa-rotate"></i> Yenile
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="fitAllMapMarkers()" title="Tüm çalışanları ekrana sığdır">
+                                        <i class="fa-solid fa-expand"></i> Kadraja Sığdır
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- KPI Stat Chips -->
+                        <div class="map-kpi-bar">
+                            <div class="map-kpi-chip">
+                                <span class="kpi-chip-label"><i class="fa-solid fa-location-pin" style="color:#0284C7;"></i> Haritadaki Personel:</span>
+                                <strong id="mapKpiWithCoords">0</strong>
+                            </div>
+                            <div class="map-kpi-chip">
+                                <span class="kpi-chip-label"><i class="fa-solid fa-circle-dot" style="color:#16A34A;"></i> Şu An Mesaide:</span>
+                                <strong id="mapKpiActive" style="color:#16A34A;">0</strong>
+                            </div>
+                            <div class="map-kpi-chip">
+                                <span class="kpi-chip-label"><i class="fa-solid fa-arrow-right-from-bracket" style="color:#DC2626;"></i> Çıkış Yapmış:</span>
+                                <strong id="mapKpiCompleted" style="color:#DC2626;">0</strong>
+                            </div>
+                            <div class="map-kpi-chip">
+                                <span class="kpi-chip-label"><i class="fa-solid fa-location-slash" style="color:#9CA3AF;"></i> Konumsuz / Kiosk:</span>
+                                <strong id="mapKpiWithoutCoords" style="color:#6B7280;">0</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Map and Sidebar 2-Column Grid -->
+                    <div class="map-content-layout">
+                        <!-- Main Map Card -->
+                        <div class="card map-main-card">
+                            <div id="liveMapContainer"></div>
+                            
+                            <!-- Harita Lejantı (Legend) -->
+                            <div class="map-legend-overlay">
+                                <div class="legend-item"><span class="legend-dot dot-active"></span> Aktif Mesaide (Giriş)</div>
+                                <div class="legend-item"><span class="legend-dot dot-completed"></span> Mesaiyi Tamamladı (Çıkış)</div>
+                            </div>
+                        </div>
+
+                        <!-- Personnel List Sidebar -->
+                        <div class="card map-sidebar-card">
+                            <div class="map-sidebar-header">
+                                <h3><i class="fa-solid fa-users"></i> Personel Konumları</h3>
+                                <div class="search-box-wrapper" style="margin-top:10px;">
+                                    <i class="fa-solid fa-magnifying-glass"></i>
+                                    <input type="text" id="mapSearchInput" placeholder="Personel veya şantiye ara..." oninput="onMapSearchChange()">
+                                </div>
+                            </div>
+                            <div id="mapPersonnelList" class="map-personnel-list-scroll">
+                                <div style="text-align:center; padding:30px; color:var(--text-muted);">
+                                    <i class="fa-solid fa-spinner fa-spin" style="font-size:1.3rem; margin-bottom:8px; display:block;"></i>
+                                    Konumlar yükleniyor...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
             <!-- Footer -->
             <footer class="app-footer">
                 <p>&copy; 2026 MCS.</p>
@@ -865,7 +969,10 @@
     <!-- Toast Notifications Container -->
     <div id="toastContainer" class="toast-container"></div>
 
+    <!-- Leaflet JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
     <!-- JavaScript -->
-    <script src="/static/app.js?v=20261005_1"></script>
+    <script src="/static/app.js?v=20261105_1"></script>
 </body>
 </html>

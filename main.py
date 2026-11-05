@@ -43,7 +43,9 @@ from schemas import (
     PasswordChangeResponse,
     MessageResponse,
     PersonnelWorkHoursItem,
-    PersonnelWorkHoursReportResponse
+    PersonnelWorkHoursReportResponse,
+    LiveMapItem,
+    LiveMapResponse
 )
 
 app = FastAPI(
@@ -1549,6 +1551,150 @@ def export_personnel_work_hours_excel(
         raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Excel oluşturulurken hata: {str(e)}")
+
+
+# ==========================================
+# CANLI SAHA & KONUM HARİTASI API
+# ==========================================
+
+@app.get(
+    "/api/v1/admin/live-map",
+    response_model=LiveMapResponse,
+    tags=["Admin Operations"],
+    dependencies=[Depends(require_admin)]
+)
+def get_live_map_data(
+    filter_mode: str = Query("today", description="Zaman aralığı: 'today' (Bugün), 'last_24h' (Son 24 Saat), 'all_latest' (Tüm Son Konumlar)"),
+    status: str = Query("all", description="Durum filtresi: 'all' (Tümü), 'active' (Sadece Mesaidekiler), 'completed' (Çıkış Yapanlar)")
+):
+    """
+    Saha çalışanlarının en son mesai hareketlerini ve GPS koordinatlarını döner.
+    Canlı harita üzerinde personelin anlık konumlarını ve durumlarını görselleştirmek için kullanılır.
+    """
+    mode_clean = (filter_mode or "today").lower().strip()
+    status_clean = (status or "all").lower().strip()
+
+    date_filter = ""
+    if mode_clean == "today":
+        date_filter = "WHERE a.LogDateTime >= CAST(GETDATE() AS DATE)"
+    elif mode_clean == "last_24h":
+        date_filter = "WHERE a.LogDateTime >= DATEADD(hour, -24, GETDATE())"
+
+    query_sql = f"""
+        WITH RankedLogs AS (
+            SELECT 
+                a.LogID, 
+                a.UserID, 
+                a.ActionType, 
+                a.LocationDescription, 
+                a.Latitude, 
+                a.Longitude,
+                a.DeviceInfo, 
+                a.IPAddress, 
+                a.ResolvedAddress, 
+                a.LogDateTime,
+                ROW_NUMBER() OVER (PARTITION BY a.UserID ORDER BY a.LogDateTime DESC, a.LogID DESC) AS rn
+            FROM FieldAttendanceLogs a
+            {date_filter}
+        )
+        SELECT 
+            r.LogID, 
+            r.UserID, 
+            u.EmployeeCode, 
+            u.FullName, 
+            u.Role,
+            r.ActionType, 
+            r.LocationDescription, 
+            r.Latitude, 
+            r.Longitude,
+            r.DeviceInfo, 
+            r.IPAddress, 
+            r.ResolvedAddress, 
+            r.LogDateTime
+        FROM RankedLogs r
+        LEFT JOIN Users u ON r.UserID = u.UserID
+        WHERE r.rn = 1
+        ORDER BY r.LogDateTime DESC;
+    """
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query_sql)
+            rows = cursor.fetchall()
+
+        now_dt = datetime.now()
+        items: List[LiveMapItem] = []
+        with_coords_count = 0
+        without_coords_count = 0
+        active_count = 0
+
+        for r in rows:
+            has_coords = bool(r.Latitude is not None and r.Longitude is not None and (abs(r.Latitude) > 0.0001 or abs(r.Longitude) > 0.0001))
+            if has_coords:
+                with_coords_count += 1
+            else:
+                without_coords_count += 1
+
+            mins_ago = 0
+            if r.LogDateTime:
+                diff_sec = (now_dt - r.LogDateTime).total_seconds()
+                mins_ago = max(0, int(diff_sec // 60))
+
+            is_active = bool(
+                r.ActionType == "CHECK_IN" and r.LogDateTime and (now_dt - r.LogDateTime).total_seconds() < 18 * 3600
+            )
+            if is_active:
+                active_count += 1
+
+            if status_clean == "active" and not is_active:
+                continue
+            if status_clean == "completed" and is_active:
+                continue
+
+            time_str = r.LogDateTime.strftime("%H:%M") if r.LogDateTime else "-"
+
+            items.append(
+                LiveMapItem(
+                    LogID=r.LogID,
+                    UserID=r.UserID,
+                    EmployeeCode=str(r.EmployeeCode or f"EMP-{r.UserID}"),
+                    FullName=str(r.FullName or f"Çalışan #{r.UserID}"),
+                    Role=str(r.Role or "EMPLOYEE"),
+                    ActionType=r.ActionType or "CHECK_IN",
+                    LocationDescription=r.LocationDescription or "-",
+                    Latitude=r.Latitude,
+                    Longitude=r.Longitude,
+                    DeviceInfo=r.DeviceInfo or "-",
+                    IPAddress=r.IPAddress or "-",
+                    ResolvedAddress=r.ResolvedAddress or "-",
+                    LogDateTime=r.LogDateTime,
+                    IsCurrentlyActive=is_active,
+                    MinutesAgo=mins_ago,
+                    TimeFormatted=time_str,
+                    HasCoordinates=has_coords
+                )
+            )
+
+        return LiveMapResponse(
+            filter_mode=mode_clean,
+            server_time=now_dt,
+            total_personnel_reported=len(items),
+            with_coordinates_count=with_coords_count,
+            without_coordinates_count=without_coords_count,
+            currently_active_count=active_count,
+            items=items
+        )
+
+    except pyodbc.Error as db_err:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(db_err)}")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
+
 
 
 

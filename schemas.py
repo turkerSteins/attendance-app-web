@@ -304,3 +304,44 @@ class PersonnelWorkHoursReportResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# ==========================================
+# CANLI SAHA HARİTASI (LIVE MAP) ŞEMALARI
+# ==========================================
+
+class LiveMapItem(BaseModel):
+    LogID: int
+    UserID: int
+    EmployeeCode: Optional[str] = ""
+    FullName: Optional[str] = ""
+    Role: Optional[str] = "EMPLOYEE"
+    ActionType: str
+    LocationDescription: Optional[str] = ""
+    Latitude: Optional[float] = None
+    Longitude: Optional[float] = None
+    DeviceInfo: Optional[str] = None
+    IPAddress: Optional[str] = None
+    ResolvedAddress: Optional[str] = None
+    LogDateTime: datetime
+    IsCurrentlyActive: bool = False
+    MinutesAgo: int = 0
+    TimeFormatted: str = ""
+    HasCoordinates: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class LiveMapResponse(BaseModel):
+    filter_mode: str
+    server_time: datetime
+    total_personnel_reported: int = 0
+    with_coordinates_count: int = 0
+    without_coordinates_count: int = 0
+    currently_active_count: int = 0
+    items: List[LiveMapItem] = []
+
+    class Config:
+        from_attributes = True
+
+

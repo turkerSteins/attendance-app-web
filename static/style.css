@@ -1481,3 +1481,342 @@ a.btn {
 .password-modal-dialog {
     max-width: 460px;
 }
+
+/* ==========================================
+   CANLI SAHA HARİTASI (LIVE MAP) STİLLERİ
+   ========================================== */
+.live-map-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+}
+
+.map-toolbar-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 24px;
+}
+
+.map-toolbar-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.map-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.map-action-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.auto-refresh-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #854D0E;
+    background: #FEF9C3;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 1px solid #FEF08A;
+    user-select: none;
+    transition: all 0.2s;
+}
+
+.auto-refresh-toggle:hover {
+    background: #FEF08A;
+}
+
+.auto-refresh-toggle input {
+    cursor: pointer;
+}
+
+.map-kpi-bar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+}
+
+.map-kpi-chip {
+    background: #F8FAF7;
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-content-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 18px;
+    align-items: start;
+}
+
+@media (max-width: 992px) {
+    .map-content-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.map-main-card {
+    position: relative;
+    padding: 0 !important;
+    overflow: hidden;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
+    min-height: 620px;
+}
+
+#liveMapContainer {
+    width: 100%;
+    height: 620px;
+    z-index: 1;
+}
+
+.map-legend-overlay {
+    position: absolute;
+    bottom: 24px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    z-index: 999;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.dot-active {
+    background: #16A34A;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.25);
+}
+
+.dot-completed {
+    background: #DC2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25);
+}
+
+.map-sidebar-card {
+    display: flex;
+    flex-direction: column;
+    height: 620px;
+    padding: 18px 20px;
+}
+
+.map-sidebar-header h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-personnel-list-scroll {
+    flex: 1;
+    overflow-y: auto;
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-right: 4px;
+}
+
+.personnel-map-item {
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: #FFFFFF;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.personnel-map-item:hover {
+    border-color: var(--primary);
+    background: #F4F7F4;
+    transform: translateY(-1px);
+}
+
+.personnel-map-item.selected {
+    border-color: var(--primary);
+    background: #E8F5E9;
+    box-shadow: 0 2px 6px rgba(46, 125, 50, 0.15);
+}
+
+.personnel-item-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.personnel-item-name {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--text-main);
+}
+
+.personnel-item-meta {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Custom Leaflet Marker Pins */
+.custom-leaflet-marker {
+    background: transparent;
+    border: none;
+}
+
+.pin-bubble {
+    width: 36px;
+    height: 36px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    position: relative;
+    cursor: pointer;
+}
+
+.pin-bubble i {
+    transform: rotate(45deg);
+    color: #FFFFFF;
+    font-size: 0.95rem;
+}
+
+.pin-active {
+    background: #16A34A;
+    border: 2px solid #FFFFFF;
+}
+
+.pin-completed {
+    background: #DC2626;
+    border: 2px solid #FFFFFF;
+}
+
+.pin-pulse-ring {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(22, 163, 74, 0.4);
+    top: -6px;
+    left: -6px;
+    animation: markerPulse 1.8s infinite;
+    pointer-events: none;
+}
+
+@keyframes markerPulse {
+    0% { transform: scale(0.6); opacity: 1; }
+    100% { transform: scale(1.4); opacity: 0; }
+}
+
+/* Map Popup Card */
+.map-popup-card {
+    min-width: 250px;
+    padding: 6px 2px;
+    font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+
+.map-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.map-popup-header strong {
+    font-size: 0.98rem;
+    color: #1E293B;
+}
+
+.map-popup-sub {
+    font-size: 0.78rem;
+    color: #64748B;
+    margin-bottom: 8px;
+}
+
+.map-popup-row {
+    font-size: 0.82rem;
+    color: #334155;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.3;
+}
+
+.map-popup-row i {
+    color: #4A6B53;
+    margin-top: 2px;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.map-popup-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    background: #F1F5F9;
+    color: #0F172A;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    margin-top: 10px;
+    transition: all 0.2s;
+}
+
+.map-popup-btn:hover {
+    background: #0F172A;
+    color: #FFFFFF;
+}
+
